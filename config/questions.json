@@ -1,0 +1,439 @@
+{
+  "sections": [
+    "Incident basics",
+    "Description of Incident",
+    "Organizational Response"
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "section": "Incident basics",
+      "label": "Date of incident",
+      "help": null,
+      "type": "date",
+      "options": null,
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q2",
+      "section": "Incident basics",
+      "label": "Time of incident",
+      "help": "e.g. 8:00AM, 3:30PM",
+      "type": "time",
+      "options": null,
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q3",
+      "section": "Incident basics",
+      "label": "Reporting person",
+      "help": "first + last name",
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q4",
+      "section": "Incident basics",
+      "label": "Witnesses or others involved",
+      "help": null,
+      "type": "long",
+      "options": null,
+      "required": false,
+      "showIf": null
+    },
+    {
+      "id": "q5",
+      "section": "Incident basics",
+      "label": "Location of incident",
+      "help": null,
+      "type": "single",
+      "options": [
+        "3 Doors Down",
+        "Bishop St",
+        "Grow Community Centre",
+        "Main Site",
+        "North Dumfries",
+        "Regional Coordination Centre (RCC)",
+        "Virtual",
+        "Youth and Teen Centre (YTC)",
+        "Other (please specify below)"
+      ],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q6",
+      "section": "Incident basics",
+      "label": "Other location of incident",
+      "help": null,
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": { "q5": "Other (please specify below)" }
+    },
+    {
+      "id": "q7",
+      "section": "Incident basics",
+      "label": "Service area",
+      "help": null,
+      "type": "single",
+      "options": [
+        "Admin/Leadership",
+        "Administration/Operations",
+        "Clinical",
+        "Community Services",
+        "Diabetes Education Program (DEP)",
+        "Facilities/IT",
+        "HART Hub",
+        "Regional Coordination Centre (RCC)",
+        "Social Work",
+        "Women's Health",
+        "YWHO",
+        "Other (please specify)"
+      ],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q8",
+      "section": "Incident basics",
+      "label": "Other service area",
+      "help": null,
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": { "q7": "Other (please specify)" }
+    },
+    {
+      "id": "q9",
+      "section": "Incident basics",
+      "label": "Individual(s) impacted",
+      "help": null,
+      "type": "single",
+      "options": [
+        "Patient/Participant over 18 years of age",
+        "Patient/Participant 18 years of age or younger",
+        "Staff/Volunteer",
+        "Visitor",
+        "Non Applicable",
+        "Other"
+      ],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q10",
+      "section": "Incident basics",
+      "label": "Individual involved phone number",
+      "help": null,
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q11",
+      "section": "Incident basics",
+      "label": "Name of individual(s) involved",
+      "help": "first + last name or patient ID",
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q12",
+      "section": "Incident basics",
+      "label": "Has a similar incident occurred with this individual?",
+      "help": null,
+      "type": "single",
+      "options": ["Yes", "No", "Unknown"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q13",
+      "section": "Description of Incident",
+      "label": "How severe do you think this incident is?",
+      "help": null,
+      "type": "single",
+      "options": ["Critical", "Less Serious", "Unsure"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q14",
+      "section": "Description of Incident",
+      "label": "Injury/Accident involved?",
+      "help": "Physical injury or health impact incl. sharps/needle stick, medication errors, self-inflicted injury/abuse concerns.",
+      "type": "single",
+      "options": ["Yes", "No"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q15",
+      "section": "Description of Incident",
+      "label": "Injury/Accident details",
+      "help": null,
+      "type": "multi",
+      "options": [
+        "Burn",
+        "Exposure to sharps",
+        "Faint/Collapse",
+        "Slip/Trip/Fall",
+        "Impact (e.g. head injury, crushed finger etc.)",
+        "Medication Error",
+        "Other"
+      ],
+      "required": false,
+      "showIf": { "q14": "Yes" }
+    },
+    {
+      "id": "q16",
+      "section": "Description of Incident",
+      "label": "Behavioural involved?",
+      "help": "Verbal aggression, harassment/violence, discrimination, suicidal ideation, non-compliance, complaints, alleged mistreatment.",
+      "type": "single",
+      "options": ["Yes", "No"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q17",
+      "section": "Description of Incident",
+      "label": "Behavioural details",
+      "help": null,
+      "type": "multi",
+      "options": [
+        "Alleged Abuse or Mistreatment",
+        "Behavioural Incident Trend (Youth Programming Only)",
+        "Complaints/Grievances",
+        "Discrimination",
+        "Harassment",
+        "Mischief",
+        "Suicidal Ideation",
+        "Total Non-Compliance",
+        "Verbal Aggression",
+        "Workplace Violence",
+        "Other"
+      ],
+      "required": false,
+      "showIf": { "q16": "Yes" }
+    },
+    {
+      "id": "q18",
+      "section": "Description of Incident",
+      "label": "Building/Facility/Confidentiality involved?",
+      "help": "Theft, damage, mischief, unsafe conditions, facility/security concerns not under an emergency response.",
+      "type": "single",
+      "options": ["Yes", "No"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q19",
+      "section": "Description of Incident",
+      "label": "Building/Facility/Confidentiality details",
+      "help": null,
+      "type": "multi",
+      "options": [
+        "Building Security System Activated",
+        "Cybersecurity",
+        "External Disaster",
+        "Privacy/Confidentiality",
+        "Property Damage",
+        "Theft",
+        "Other"
+      ],
+      "required": false,
+      "showIf": { "q18": "Yes" }
+    },
+    {
+      "id": "q20",
+      "section": "Organizational Response",
+      "label": "Was an emergency code activated/called?",
+      "help": null,
+      "type": "single",
+      "options": ["Yes", "No", "Unknown"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q21",
+      "section": "Organizational Response",
+      "label": "Emergency code activated",
+      "help": null,
+      "type": "single",
+      "options": [
+        "Assistance Required (escalated situation) (Code White)",
+        "Bomb Threat (Code Black)",
+        "Cybersecurity Threat (Code Cyber)",
+        "Fire (Code Red)",
+        "Hazardous Materials (Code Brown)",
+        "Hold & Secure and Lockdown (Code Gray)",
+        "Internal Disaster (Code Orange)",
+        "Medical Emergency (Code Blue)",
+        "Missing Child (Code Amber)",
+        "Missing Person (Code Yellow)",
+        "Other"
+      ],
+      "required": false,
+      "showIf": { "q20": "Yes" }
+    },
+    {
+      "id": "q22",
+      "section": "Organizational Response",
+      "label": "Was a panic button utilized?",
+      "help": null,
+      "type": "single",
+      "options": ["Yes", "No", "Unknown"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q23",
+      "section": "Organizational Response",
+      "label": "Were emergency services contacted?",
+      "help": null,
+      "type": "single",
+      "options": ["Yes", "No", "Unknown"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q24",
+      "section": "Organizational Response",
+      "label": "Any other types of emergency response/support activated?",
+      "help": null,
+      "type": "long",
+      "options": null,
+      "required": false,
+      "showIf": null
+    },
+    {
+      "id": "q25",
+      "section": "Organizational Response",
+      "label": "Emergency services contacted",
+      "help": null,
+      "type": "single",
+      "options": ["Ambulance", "Fire", "Police", "Other"],
+      "required": true,
+      "showIf": { "q23": "Yes" }
+    },
+    {
+      "id": "q26",
+      "section": "Organizational Response",
+      "label": "Police officer name or badge #",
+      "help": null,
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": { "q25": "Police" }
+    },
+    {
+      "id": "q27",
+      "section": "Organizational Response",
+      "label": "Police incident #",
+      "help": null,
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": { "q25": "Police" }
+    },
+    {
+      "id": "q28",
+      "section": "Organizational Response",
+      "label": "Were Family & Children's Services contacted?",
+      "help": null,
+      "type": "single",
+      "options": ["Yes", "No", "Unknown"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q29",
+      "section": "Organizational Response",
+      "label": "Name of person at F&CS spoken to",
+      "help": null,
+      "type": "short",
+      "options": null,
+      "required": true,
+      "showIf": { "q28": "Yes" }
+    },
+    {
+      "id": "q30",
+      "section": "Organizational Response",
+      "label": "Was the involved individual's emergency contact notified?",
+      "help": null,
+      "type": "single",
+      "options": ["Yes", "No", "Unknown"],
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q31",
+      "section": "Organizational Response",
+      "label": "Immediate intervention(s)",
+      "help": null,
+      "type": "multi",
+      "options": [
+        "Ask to Leave Premises",
+        "CPR",
+        "Crisis Counselling",
+        "Descalation",
+        "Dismissal/Suspension",
+        "First Aid",
+        "Security Guard Support",
+        "Supervisory Support",
+        "Other"
+      ],
+      "required": false,
+      "showIf": null
+    },
+    {
+      "id": "q32",
+      "section": "Organizational Response",
+      "label": "Describe briefly what happened, including circumstances leading up to the incident. Do not include assumptions.",
+      "help": null,
+      "type": "long",
+      "options": null,
+      "required": true,
+      "showIf": null
+    },
+    {
+      "id": "q33",
+      "section": "Organizational Response",
+      "label": "Follow up — recommendations to prevent re-occurrence; note any follow-ups or referrals",
+      "help": null,
+      "type": "long",
+      "options": null,
+      "required": false,
+      "showIf": null
+    },
+    {
+      "id": "q34",
+      "section": "Organizational Response",
+      "label": "Is a Critical Incident Debrief required?",
+      "help": null,
+      "type": "single",
+      "options": ["Yes", "No", "Unknown"],
+      "required": false,
+      "showIf": null
+    },
+    {
+      "id": "q35",
+      "section": "Organizational Response",
+      "label": "Who is your direct supervisor that this should be emailed to?",
+      "help": null,
+      "type": "single",
+      "options": ["Jordan Reyes", "Morgan Blake", "Other"],
+      "required": true,
+      "showIf": null
+    }
+  ]
+}

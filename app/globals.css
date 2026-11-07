@@ -12,6 +12,16 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Staff intake (Mathew) — calm, clinical palette: one blue accent,
+   red only for Critical, amber for warnings/overdue. */
+@theme {
+  --color-accent: #1d4ed8;
+  --color-accent-light: #eff6ff;
+  --color-critical: #dc2626;
+  --color-warn: #d97706;
+  --container-staff: 480px;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
