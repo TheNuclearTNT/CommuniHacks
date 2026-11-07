@@ -1,5 +1,5 @@
 import { subWeeks } from 'date-fns';
-import { and, desc, gte, lte } from 'drizzle-orm';
+import { and, desc, gte, isNull, lte } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { generateExecutiveInsights } from '@/lib/ai/gemini';
 import { getDb, schema } from '@/lib/db';
@@ -24,30 +24,43 @@ export async function GET(req: Request) {
 
     const db = await getDb();
 
-    // Fetch only aggregate metadata (id, site, types, status, severity) — never raw answers (B9)
-    const rows = await db
-      .select({
-        id: schema.incidents.id,
-        site: schema.incidents.site,
-        types: schema.incidents.types,
-        status: schema.incidents.status,
-        severity: schema.incidents.severity,
-      })
-      .from(schema.incidents)
-      .where(
-        and(
-          gte(schema.incidents.createdAt, fromDate.toISOString()),
-          lte(schema.incidents.createdAt, toDate.toISOString()),
-        ),
-      )
-      .orderBy(desc(schema.incidents.createdAt));
+    // Fetch only aggregate metadata (id, site, types, status, cycle) — never raw answers (B9)
+    const [rows, unmetClocks] = await Promise.all([
+      db
+        .select({
+          id: schema.incidents.id,
+          site: schema.incidents.site,
+          types: schema.incidents.types,
+          status: schema.incidents.status,
+          cycle: schema.incidents.cycle,
+        })
+        .from(schema.incidents)
+        .where(
+          and(
+            gte(schema.incidents.createdAt, fromDate.toISOString()),
+            lte(schema.incidents.createdAt, toDate.toISOString()),
+          ),
+        )
+        .orderBy(desc(schema.incidents.createdAt)),
+      db
+        .select({
+          incidentId: schema.complianceClocks.incidentId,
+          dueAt: schema.complianceClocks.dueAt,
+        })
+        .from(schema.complianceClocks)
+        .where(isNull(schema.complianceClocks.metAt)),
+    ]);
 
     const byTypeMap = new Map<string, string[]>();
     const bySiteMap = new Map<string, string[]>();
     const allowedIncidentIds: string[] = [];
+    const awaitingAckIds: string[] = [];
+    const reopenedIds: string[] = [];
 
     for (const row of rows) {
       allowedIncidentIds.push(row.id);
+      if (row.status === 'SPECIALTY_REVIEW') awaitingAckIds.push(row.id);
+      if (row.cycle > 1) reopenedIds.push(row.id);
 
       const siteKey = row.site || 'Main Site';
       if (!bySiteMap.has(siteKey)) bySiteMap.set(siteKey, []);
@@ -58,6 +71,19 @@ export async function GET(req: Request) {
         byTypeMap.get(t)!.push(row.id);
       }
     }
+
+    const allowedSet = new Set(allowedIncidentIds);
+    const overdueClockIds = Array.from(
+      new Set(
+        unmetClocks
+          .filter(
+            (c) =>
+              allowedSet.has(c.incidentId) &&
+              new Date(c.dueAt).getTime() <= toDate.getTime(),
+          )
+          .map((c) => c.incidentId),
+      ),
+    );
 
     const aggregatesPayload = {
       byType: Array.from(byTypeMap.entries()).map(([type, ids]) => ({
@@ -70,6 +96,9 @@ export async function GET(req: Request) {
         count: ids.length,
         sampleIncidentIds: ids.slice(0, 5),
       })),
+      awaitingAckIds,
+      overdueClockIds,
+      reopenedIds,
       allowedIncidentIds,
     };
 
@@ -79,4 +108,3 @@ export async function GET(req: Request) {
     return handleApiError(err);
   }
 }
-

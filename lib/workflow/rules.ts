@@ -199,3 +199,66 @@ function computeTimeWindow(timeStr: string): string {
   return `${fmt(startMins)} to ${fmt(endMins)} (${timeStr} −30 min to +30 min)`;
 }
 
+/**
+ * Returns the Monday date (YYYY-MM-DD) in UTC for a given date/timestamp.
+ */
+export function toMondayDateStr(input: string | Date): string {
+  const d = typeof input === 'string' ? new Date(input) : new Date(input.getTime());
+  const utcDay = d.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const diffToMonday = utcDay === 0 ? -6 : 1 - utcDay;
+  const monday = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diffToMonday),
+  );
+  return monday.toISOString().slice(0, 10);
+}
+
+/**
+ * Parses day of week (0=Sun..6=Sat) and hour (0..23) from q1 (date) and q2 (time)
+ * on the intake form, falling back to createdAt only if q1/q2 are absent.
+ */
+export function parseIncidentDowAndHour(
+  answers: Answers | null | undefined,
+  fallbackCreatedAt: string | Date,
+): { dow: number; hour: number } {
+  const fallback =
+    typeof fallbackCreatedAt === 'string'
+      ? new Date(fallbackCreatedAt)
+      : fallbackCreatedAt;
+
+  let dow = fallback.getUTCDay();
+  const q1 = typeof answers?.q1 === 'string' ? answers.q1.trim() : '';
+  if (q1) {
+    const ymd = q1.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (ymd) {
+      const utcDate = new Date(
+        Date.UTC(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])),
+      );
+      if (!Number.isNaN(utcDate.getTime())) {
+        dow = utcDate.getUTCDay();
+      }
+    } else {
+      const parsed = new Date(q1);
+      if (!Number.isNaN(parsed.getTime())) {
+        dow = parsed.getUTCDay();
+      }
+    }
+  }
+
+  let hour = fallback.getUTCHours();
+  const q2 = typeof answers?.q2 === 'string' ? answers.q2.trim() : '';
+  if (q2) {
+    const tm = q2.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (tm) {
+      let h = parseInt(tm[1], 10);
+      const meridiem = tm[3]?.toLowerCase();
+      if (meridiem === 'pm' && h < 12) h += 12;
+      if (meridiem === 'am' && h === 12) h = 0;
+      if (h >= 0 && h <= 23) {
+        hour = h;
+      }
+    }
+  }
+
+  return { dow, hour };
+}
+

@@ -20,6 +20,7 @@ import type {
   User,
 } from '@/lib/types';
 import { buildComplianceClocks } from './clocks';
+import { getRequestTimestamp } from './auth';
 import {
   deriveTypes,
   extractLocation,
@@ -233,6 +234,7 @@ export async function getIncidentDetail(
 export async function submitNewIncident(
   actor: User,
   input: SubmitTransitionInput,
+  nowOverride?: Date | string,
 ): Promise<Incident> {
   if (!input || typeof input.answers !== 'object' || input.answers === null) {
     throw new WorkflowError('answers object is required', 400, {
@@ -240,12 +242,20 @@ export async function submitNewIncident(
     });
   }
 
-  const ai = await analyseIncident(input.answers, input.transcript);
+  const baseNow = nowOverride
+    ? new Date(nowOverride)
+    : await getRequestTimestamp();
+  const now = baseNow.toISOString();
+
+  const rawAi = await analyseIncident(input.answers, input.transcript);
+  const ai = {
+    ...rawAi,
+    generatedAt: now,
+  };
   const db = await getDb();
 
   return db.transaction(async (tx) => {
     const id = await nextIncidentId(tx as unknown as AppDatabase);
-    const now = new Date().toISOString();
     const supervisorId = resolveSupervisorId(input.answers.q35);
     const site = extractLocation(input.answers);
     const derived = deriveTypes(input.answers);
@@ -348,9 +358,18 @@ export async function transition(
     | SupervisorReviewInput
     | AckTransitionInput
     | ReopenTransitionInput,
+  nowOverride?: Date | string,
 ): Promise<IncidentDetail> {
+  const resolvedNow = nowOverride
+    ? new Date(nowOverride)
+    : await getRequestTimestamp();
+
   if (action === 'submit') {
-    const created = await submitNewIncident(actor, input as SubmitTransitionInput);
+    const created = await submitNewIncident(
+      actor,
+      input as SubmitTransitionInput,
+      resolvedNow,
+    );
     return getIncidentDetail(created.id);
   }
 
@@ -366,7 +385,7 @@ export async function transition(
       throw new WorkflowError(`Incident ${incidentId} not found`, 404);
     }
 
-    const baseNow = new Date();
+    const baseNow = resolvedNow;
 
     if (action === 'open') {
       if (actor.role !== 'SUPERVISOR') {

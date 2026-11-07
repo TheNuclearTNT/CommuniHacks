@@ -329,37 +329,104 @@ const INSIGHTS_RESPONSE_SCHEMA: Schema = {
   required: ['bullets', 'focus'],
 };
 
+export interface ExecutiveAggregatesPayload {
+  byType: { type: string; count: number; sampleIncidentIds: string[] }[];
+  bySite: { site: string; count: number; sampleIncidentIds: string[] }[];
+  awaitingAckIds?: string[];
+  overdueClockIds?: string[];
+  reopenedIds?: string[];
+  allowedIncidentIds: string[];
+}
+
+/**
+ * Data-driven deterministic insights computation over the database aggregates (used in mock mode and as no-AI fallback).
+ */
+export function computeDeterministicInsights(
+  payload: ExecutiveAggregatesPayload,
+  mockFlag: boolean,
+): InsightsResponse {
+  if (payload.allowedIncidentIds.length === 0) {
+    return {
+      ...MOCK_INSIGHTS,
+      generatedAt: new Date().toISOString(),
+      mock: mockFlag,
+    };
+  }
+
+  const sortedSites = [...payload.bySite].sort((a, b) => b.count - a.count);
+  const sortedTypes = [...payload.byType].sort((a, b) => b.count - a.count);
+  const bullets: { text: string; incidentIds: string[] }[] = [];
+
+  if (sortedSites.length > 0) {
+    const topSite = sortedSites[0];
+    bullets.push({
+      text: `${topSite.site} accounts for the highest volume of reported incidents (${topSite.count} of ${payload.allowedIncidentIds.length} records in the selected window).`,
+      incidentIds: topSite.sampleIncidentIds.slice(0, 4),
+    });
+  }
+
+  if (sortedTypes.length > 0) {
+    const topType = sortedTypes[0];
+    bullets.push({
+      text: `${topType.type.replace('_', ' ')} is the most frequent incident category (${topType.count} reports), requiring targeted preventive follow-up.`,
+      incidentIds: topType.sampleIncidentIds.slice(0, 4),
+    });
+  }
+
+  if (sortedTypes.length > 1) {
+    const secondType = sortedTypes[1];
+    bullets.push({
+      text: `${secondType.type.replace('_', ' ')} represents the second largest routing pathway (${secondType.count} reports) across Langs sites.`,
+      incidentIds: secondType.sampleIncidentIds.slice(0, 4),
+    });
+  }
+
+  if (payload.overdueClockIds && payload.overdueClockIds.length > 0) {
+    bullets.push({
+      text: `${payload.overdueClockIds.length} compliance clock(s) are currently overdue or approaching statutory reporting deadlines (WSIB / JHSC / MOL).`,
+      incidentIds: payload.overdueClockIds.slice(0, 4),
+    });
+  } else if (payload.awaitingAckIds && payload.awaitingAckIds.length > 0) {
+    bullets.push({
+      text: `${payload.awaitingAckIds.length} incident(s) are currently in Specialty Acknowledgement awaiting sign-off before Executive Assistant filing.`,
+      incidentIds: payload.awaitingAckIds.slice(0, 4),
+    });
+  } else if (payload.reopenedIds && payload.reopenedIds.length > 0) {
+    bullets.push({
+      text: `${payload.reopenedIds.length} closed record(s) were reopened for additional follow-up on the same incident ID without creating duplicate records.`,
+      incidentIds: payload.reopenedIds.slice(0, 4),
+    });
+  }
+
+  // Ensure at least 3 bullets
+  while (bullets.length < 3) {
+    bullets.push({
+      text: 'All submitted incidents in the window were routed through Supervisor Review with full audit logging.',
+      incidentIds: payload.allowedIncidentIds.slice(0, 3),
+    });
+  }
+
+  const topSiteName = sortedSites[0]?.site ?? 'Main Site';
+  const topTypeName = sortedTypes[0]?.type.replace('_', ' ') ?? 'FACILITIES';
+
+  return {
+    bullets: bullets.slice(0, 5),
+    focus: `Prioritize preventive controls and timely specialty acknowledgements for ${topTypeName} incidents at ${topSiteName}.`,
+    generatedAt: new Date().toISOString(),
+    mock: mockFlag,
+  };
+}
+
 /**
  * Generates executive insights over aggregate statistics and top-N incident IDs only (never raw answers) (B9).
  */
 export async function generateExecutiveInsights(
-  aggregatesPayload: {
-    byType: { type: string; count: number; sampleIncidentIds: string[] }[];
-    bySite: { site: string; count: number; sampleIncidentIds: string[] }[];
-    allowedIncidentIds: string[];
-  },
+  aggregatesPayload: ExecutiveAggregatesPayload,
 ): Promise<InsightsResponse> {
   const allowedSet = new Set(aggregatesPayload.allowedIncidentIds);
 
-  const filterAllowedIds = (ids: string[]): string[] => {
-    const valid = ids.filter((id) => allowedSet.has(id));
-    if (valid.length > 0) return valid;
-    return aggregatesPayload.allowedIncidentIds.slice(0, 2);
-  };
-
   if (isMockAiEnabled()) {
-    return {
-      bullets: MOCK_INSIGHTS.bullets.map((b) => ({
-        text: b.text,
-        incidentIds:
-          allowedSet.size > 0
-            ? filterAllowedIds(b.incidentIds)
-            : b.incidentIds,
-      })),
-      focus: MOCK_INSIGHTS.focus,
-      generatedAt: new Date().toISOString(),
-      mock: true,
-    };
+    return computeDeterministicInsights(aggregatesPayload, true);
   }
 
   try {
@@ -385,21 +452,10 @@ export async function generateExecutiveInsights(
     };
   } catch (err) {
     console.warn(
-      '[ai] Gemini generateExecutiveInsights failed; using fallback insights:',
+      '[ai] Gemini generateExecutiveInsights failed; using deterministic computeInsights fallback:',
       err instanceof Error ? err.message : err,
     );
-    return {
-      bullets: MOCK_INSIGHTS.bullets.map((b) => ({
-        text: b.text,
-        incidentIds:
-          allowedSet.size > 0
-            ? filterAllowedIds(b.incidentIds)
-            : b.incidentIds,
-      })),
-      focus: MOCK_INSIGHTS.focus,
-      generatedAt: new Date().toISOString(),
-      mock: true,
-    };
+    return computeDeterministicInsights(aggregatesPayload, false);
   }
 }
 

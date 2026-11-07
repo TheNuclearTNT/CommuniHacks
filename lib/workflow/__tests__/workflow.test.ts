@@ -6,8 +6,10 @@ import {
   buildComplianceClocks,
   deriveTypes,
   formatFootageHoldTitle,
+  parseIncidentDowAndHour,
   requiredAcks,
   submitNewIncident,
+  toMondayDateStr,
   transition,
   WorkflowError,
 } from '@/lib/workflow';
@@ -434,5 +436,81 @@ describe('State machine transitions & Langs Scenarios 1–3 + Reopen (B5 & B11)'
     expect(created.ai?.mock).toBe(false);
     expect(created.ai?.suggestedTypes).toEqual(['PRIVACY']);
     expect(created.ai?.summaryBullets).toEqual([]);
+  });
+
+  it('supports back-dated seed timestamps across submit, review, ack, and receive', async () => {
+    const staff = userByRole('STAFF');
+    const supervisor = userByRole('SUPERVISOR');
+    const privacyOfficer = userByRole('PRIVACY_OFFICER');
+    const ea = userByRole('EXEC_ASSISTANT');
+
+    const t1 = '2026-09-01T09:00:00.000Z';
+    const t2 = '2026-09-01T11:00:00.000Z';
+    const t3 = '2026-09-01T14:00:00.000Z';
+    const t4 = '2026-09-01T16:00:00.000Z';
+
+    const created = await submitNewIncident(
+      staff,
+      {
+        answers: {
+          q1: '2026-09-01',
+          q2: '8:30AM',
+          q18: 'Yes',
+          q19: ['Privacy/Confidentiality'],
+          q32: 'Back-dated seed test',
+        },
+      },
+      t1,
+    );
+    expect(created.createdAt).toBe(t1);
+
+    const reviewed = await transition(
+      created.id,
+      'review',
+      supervisor,
+      {
+        confirmedTypes: ['PRIVACY'],
+        severity: 'Less Serious',
+        seriousBehavioural: false,
+        healthCareBeyondFirstAid: false,
+        lostTime: false,
+        criticalInjury: false,
+        correctiveActions: [],
+        footageHold: false,
+        notes: 'Seeded review',
+      },
+      t2,
+    );
+    expect(reviewed.reviews[0].submittedAt).toBe(t2);
+
+    const acked = await transition(
+      created.id,
+      'ack',
+      privacyOfficer,
+      { ackId: reviewed.acknowledgements[0].id },
+      t3,
+    );
+    expect(acked.acknowledgements[0].ackedAt).toBe(t3);
+
+    const closed = await transition(created.id, 'receive', ea, undefined, t4);
+    expect(closed.incident.closedAt).toBe('2026-09-01T16:00:00.001Z');
+  });
+});
+
+describe('Trends helpers: Monday week formatting & q1/q2 heatmap parsing', () => {
+  it('computes Monday YYYY-MM-DD for any day of the week', () => {
+    // 2026-11-07 is Saturday -> Monday is 2026-11-02
+    expect(toMondayDateStr('2026-11-07T15:00:00.000Z')).toBe('2026-11-02');
+    // 2026-11-08 is Sunday -> Monday is 2026-11-02
+    expect(toMondayDateStr('2026-11-08T15:00:00.000Z')).toBe('2026-11-02');
+  });
+
+  it('parses dow and hour from q1 and q2 instead of createdAt', () => {
+    // 2026-10-28 is Wednesday (dow=3), 3:30PM is hour=15
+    const res = parseIncidentDowAndHour(
+      { q1: '2026-10-28', q2: '3:30PM' },
+      '2026-11-07T02:00:00.000Z',
+    );
+    expect(res).toEqual({ dow: 3, hour: 15 });
   });
 });

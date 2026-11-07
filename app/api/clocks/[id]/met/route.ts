@@ -1,7 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { getDb, schema } from '@/lib/db';
-import { getCurrentUser, handleApiError } from '@/lib/workflow/auth';
+import {
+  getCurrentUser,
+  getRequestTimestamp,
+  handleApiError,
+} from '@/lib/workflow/auth';
 import { mapClockRow, WorkflowError } from '@/lib/workflow/transition';
 
 export async function POST(
@@ -12,7 +16,7 @@ export async function POST(
     const { id } = await context.params;
     const me = await getCurrentUser();
     const db = await getDb();
-    const nowIso = new Date().toISOString();
+    const nowIso = (await getRequestTimestamp()).toISOString();
 
     return await db.transaction(async (tx) => {
       const [clock] = await tx

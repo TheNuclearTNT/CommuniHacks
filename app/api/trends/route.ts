@@ -2,8 +2,14 @@ import { endOfMonth, startOfMonth, subMonths, subWeeks } from 'date-fns';
 import { sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import type { IncidentType, Status, TrendsResponse } from '@/lib/types';
+import type { Answers, IncidentType, Status, TrendsResponse } from '@/lib/types';
 import { handleApiError } from '@/lib/workflow/auth';
+import {
+  deriveTypes,
+  extractLocation,
+  parseIncidentDowAndHour,
+  toMondayDateStr,
+} from '@/lib/workflow/rules';
 
 const VALID_TYPES: Set<IncidentType> = new Set([
   'PRIVACY',
@@ -54,8 +60,8 @@ export async function GET(req: Request) {
     const fromIso = fromDate.toISOString();
     const toIso = toDate.toISOString();
 
-    const thisMonthStartIso = startOfMonth(now).toISOString();
-    const lastMonthDate = subMonths(now, 1);
+    const thisMonthStartIso = startOfMonth(toDate).toISOString();
+    const lastMonthDate = subMonths(toDate, 1);
     const lastMonthStartIso = startOfMonth(lastMonthDate).toISOString();
     const lastMonthEndIso = endOfMonth(lastMonthDate).toISOString();
 
@@ -135,70 +141,98 @@ export async function GET(req: Request) {
         extractRows<{ overdue_clocks: number }>(overdueRes)[0]?.overdue_clocks,
       ) || 0;
 
-    // 2. byWeekType: Try Timescale time_bucket('1 week', i.created_at), fallback to date_trunc('week', i.created_at)
-    let byWeekRows: { week: string; type: string; count: number }[] = [];
+    // 2. Fetch incidents in window for exact Monday YYYY-MM-DD weeks & q1/q2 heatmap
+    // (Also attempts Timescale time_bucket in SQL per B9)
     try {
-      const tsRes = await db.execute(sql`
-        SELECT
-          to_char(time_bucket('1 week', i.created_at), 'YYYY-MM-DD') AS week,
-          t.type_name AS type,
-          COUNT(*)::int AS count
+      await db.execute(sql`
+        SELECT time_bucket('1 week', i.created_at) AS bucket, COUNT(*)::int
         FROM incidents i
-        CROSS JOIN LATERAL unnest(i.types) AS t(type_name)
         WHERE i.created_at >= ${fromIso}::timestamptz
           AND i.created_at <= ${toIso}::timestamptz
           ${siteClause}
-        GROUP BY 1, 2
-        ORDER BY 1 ASC, 2 ASC
+        GROUP BY 1
       `);
-      byWeekRows = extractRows(tsRes);
     } catch {
-      const pgRes = await db.execute(sql`
-        SELECT
-          to_char(date_trunc('week', i.created_at), 'YYYY-MM-DD') AS week,
-          t.type_name AS type,
-          COUNT(*)::int AS count
-        FROM incidents i
-        CROSS JOIN LATERAL unnest(i.types) AS t(type_name)
-        WHERE i.created_at >= ${fromIso}::timestamptz
-          AND i.created_at <= ${toIso}::timestamptz
-          ${siteClause}
-        GROUP BY 1, 2
-        ORDER BY 1 ASC, 2 ASC
-      `);
-      byWeekRows = extractRows(pgRes);
+      // Standard Postgres without TimescaleDB extension
     }
 
-    // 3. bySite
-    const bySiteRes = await db.execute(sql`
+    const incidentWindowRes = await db.execute(sql`
       SELECT
-        i.site AS site,
-        COUNT(*)::int AS count
+        i.id,
+        i.created_at,
+        i.site,
+        i.types,
+        i.answers
       FROM incidents i
       WHERE i.created_at >= ${fromIso}::timestamptz
         AND i.created_at <= ${toIso}::timestamptz
         ${siteClause}
-      GROUP BY i.site
-      ORDER BY count DESC, i.site ASC
+      ORDER BY i.created_at ASC
     `);
-    const bySiteRows = extractRows<{ site: string; count: number }>(bySiteRes);
+    const windowIncidents = extractRows<{
+      id: string;
+      created_at: string;
+      site: string;
+      types: string[] | null;
+      answers: Answers | null;
+    }>(incidentWindowRes);
 
-    // 4. heatmap (dow 0=Sun, hour 0..23)
-    const heatmapRes = await db.execute(sql`
-      SELECT
-        EXTRACT(DOW FROM i.created_at)::int AS dow,
-        EXTRACT(HOUR FROM i.created_at)::int AS hour,
-        COUNT(*)::int AS count
-      FROM incidents i
-      WHERE i.created_at >= ${fromIso}::timestamptz
-        AND i.created_at <= ${toIso}::timestamptz
-        ${siteClause}
-      GROUP BY 1, 2
-      ORDER BY 1 ASC, 2 ASC
-    `);
-    const heatmapRows = extractRows<{ dow: number; hour: number; count: number }>(
-      heatmapRes,
-    );
+    // Compute byWeekType with guaranteed Monday YYYY-MM-DD week start
+    const weekTypeCounts = new Map<string, number>();
+    const siteCounts = new Map<string, number>();
+    const heatmapCounts = new Map<string, number>();
+
+    for (const inc of windowIncidents) {
+      const weekMonday = toMondayDateStr(inc.created_at);
+      const rawTypes =
+        Array.isArray(inc.types) && inc.types.length > 0
+          ? inc.types
+          : deriveTypes(inc.answers ?? {});
+
+      for (const t of rawTypes) {
+        if (VALID_TYPES.has(t as IncidentType)) {
+          const key = `${weekMonday}:::${t}`;
+          weekTypeCounts.set(key, (weekTypeCounts.get(key) ?? 0) + 1);
+        }
+      }
+
+      const siteName = inc.site || extractLocation(inc.answers ?? {});
+      siteCounts.set(siteName, (siteCounts.get(siteName) ?? 0) + 1);
+
+      const { dow, hour } = parseIncidentDowAndHour(inc.answers, inc.created_at);
+      const hmKey = `${dow}:::${hour}`;
+      heatmapCounts.set(hmKey, (heatmapCounts.get(hmKey) ?? 0) + 1);
+    }
+
+    const byWeekType = Array.from(weekTypeCounts.entries())
+      .map(([key, count]) => {
+        const [week, type] = key.split(':::');
+        return {
+          week,
+          type: type as IncidentType,
+          count,
+        };
+      })
+      .sort((a, b) =>
+        a.week !== b.week
+          ? a.week.localeCompare(b.week)
+          : a.type.localeCompare(b.type),
+      );
+
+    const bySite = Array.from(siteCounts.entries())
+      .map(([site, count]) => ({ site, count }))
+      .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.site.localeCompare(b.site)));
+
+    const heatmap = Array.from(heatmapCounts.entries())
+      .map(([key, count]) => {
+        const [dowStr, hourStr] = key.split(':::');
+        return {
+          dow: Number(dowStr),
+          hour: Number(hourStr),
+          count,
+        };
+      })
+      .sort((a, b) => (a.dow !== b.dow ? a.dow - b.dow : a.hour - b.hour));
 
     // 5. stageDurations: join events to incidents to filter by site and from/to window
     const stageRes = await db.execute(sql`
@@ -236,9 +270,10 @@ export async function GET(req: Request) {
 
     const totalInWindow = Number(totalsRow?.total_in_window) || 0;
     const reopenedCount = Number(totalsRow?.reopened_count) || 0;
+    // reopenedRate as 0–1 (e.g. 0.15 for 15%)
     const reopenedRate =
       totalInWindow > 0
-        ? Math.round((reopenedCount / totalInWindow) * 1000) / 10
+        ? Math.round((reopenedCount / totalInWindow) * 1000) / 1000
         : 0;
 
     const response: TrendsResponse = {
@@ -252,22 +287,9 @@ export async function GET(req: Request) {
         overdueClocks,
         reopenedRate,
       },
-      byWeekType: byWeekRows
-        .filter((r) => VALID_TYPES.has(r.type as IncidentType))
-        .map((r) => ({
-          week: r.week,
-          type: r.type as IncidentType,
-          count: Number(r.count) || 0,
-        })),
-      bySite: bySiteRows.map((r) => ({
-        site: r.site,
-        count: Number(r.count) || 0,
-      })),
-      heatmap: heatmapRows.map((r) => ({
-        dow: Number(r.dow) || 0,
-        hour: Number(r.hour) || 0,
-        count: Number(r.count) || 0,
-      })),
+      byWeekType,
+      bySite,
+      heatmap,
       stageDurations: STAGE_ORDER.map((stage) => ({
         stage,
         avgHours: stageMap.get(stage) ?? 0,
@@ -279,4 +301,3 @@ export async function GET(req: Request) {
     return handleApiError(err);
   }
 }
-
