@@ -930,8 +930,8 @@ export function computeTrends(plans: DemoPlan[], params: DashboardParams, now: n
       awaitingAck: scoped.filter((p) => p.status === 'SPECIALTY_REVIEW').length,
       avgDaysToClose: Math.round(avg(closeDays) * 10) / 10,
       overdueClocks: scoped.reduce((n, p) => n + p.clocks.filter((c) => isOverdue(c, now)).length, 0),
-      // percentage of records in range, matching /api/trends
-      reopenedRate: scoped.length ? Math.round((scoped.filter((p) => p.cycle > 1).length / scoped.length) * 1000) / 10 : 0,
+      // fraction of records in range (0.04 = 4%), matching /api/trends
+      reopenedRate: scoped.length ? scoped.filter((p) => p.cycle > 1).length / scoped.length : 0,
     },
     byWeekType: [...byWeekType].map(([k, count]) => {
       const [week, type] = k.split('|');

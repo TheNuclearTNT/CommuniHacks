@@ -16,8 +16,11 @@ function Card({ label, value, sub, tone = 'normal', extra }: { label: string; va
   );
 }
 
-// reopenedRate is a percentage (e.g. 5.3), as /api/trends returns it.
-const pct = (r: number) => `${r < 10 ? r.toFixed(1) : Math.round(r)}%`;
+// reopenedRate is a fraction (0.04 = 4%), as /api/trends returns it.
+const pct = (r: number) => {
+  const p = r * 100;
+  return `${p < 10 ? p.toFixed(1) : Math.round(p)}%`;
+};
 
 export function MetricCards({ totals }: { totals: TrendsResponse['totals'] }) {
   return (
