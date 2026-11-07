@@ -42,9 +42,11 @@
    - `POST /api/incidents/:id/receive`
    - `POST /api/incidents/:id/reopen`
    - `PATCH /api/actions/:id` (updates follow-up actions **and** also accepts a compliance clock ID to mark `metAt` when `status === 'DONE'`)
-   - `POST /api/clocks/:id/met` (dedicated endpoint to mark a compliance clock met)
-   - `GET /api/trends?from=&to=&site=` (`from`, `to`, and `site` filters apply to every field including `stageDurations`; defaults to all sites, last 12 weeks)
-   - `GET /api/insights?from=&to=` (sends only aggregates + top-N incident IDs to Gemini, validates returned IDs against supplied IDs)
+   - `POST /api/clocks/:id/met` (dedicated endpoint to mark a compliance clock met; honours `x-seed-time` when `ALLOW_SEED_TIME=true`)
+   - `POST /api/dev/reset-demo` (wipes all incidents/reviews/acks/actions/clocks/events and resets `incident_id_seq` to 1 while keeping `users`; requires `ALLOW_SEED_TIME=true`)
+   - `GET /api/trends?from=&to=&site=` (`from`, `to`, and `site` filters apply to every field including `stageDurations`; `byWeekType.week` is the Monday `YYYY-MM-DD` date; `heatmap` uses `q1`/`q2` incident date/time; `reopenedRate` is `0–1`)
+   - `GET /api/insights?from=&to=` (sends only aggregates + top-N incident IDs to Gemini, validates returned IDs against supplied IDs, and uses data-driven `computeDeterministicInsights` as the mock/no-AI fallback)
+   - **Seed time support (`ALLOW_SEED_TIME=true`)**: all mutation routes (`POST /api/incidents`, `open`, `review`, `ack`, `receive`, `reopen`, `PATCH /api/actions/:id`, `POST /api/clocks/:id/met`) honour the `x-seed-time` ISO timestamp header when `ALLOW_SEED_TIME=true`.
 
 ---
 

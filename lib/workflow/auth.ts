@@ -6,6 +6,33 @@ import { SEED_USERS } from '@/lib/mock/connan';
 import type { Role, User } from '@/lib/types';
 import { WorkflowError } from './transition';
 
+export function isSeedTimeAllowed(): boolean {
+  return String(process.env.ALLOW_SEED_TIME ?? '').toLowerCase() === 'true';
+}
+
+/**
+ * Returns the timestamp to use for mutations and audit events.
+ * When ALLOW_SEED_TIME=true and a valid x-seed-time ISO header is present,
+ * uses that timestamp so seed scripts can back-date records across 12 weeks.
+ */
+export async function getRequestTimestamp(): Promise<Date> {
+  if (isSeedTimeAllowed()) {
+    try {
+      const headerStore = await headers();
+      const rawSeedTime = headerStore.get('x-seed-time')?.trim();
+      if (rawSeedTime) {
+        const parsed = new Date(rawSeedTime);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Called outside Next.js request context (e.g. direct unit test)
+    }
+  }
+  return new Date();
+}
+
 export async function getCurrentUser(): Promise<User> {
   const cookieStore = await cookies();
   const headerStore = await headers();
@@ -34,7 +61,6 @@ export async function getCurrentUser(): Promise<User> {
 
     const seedUser = SEED_USERS.find((u) => u.id === rawUserId);
     if (seedUser) {
-      // If role cookie was explicitly passed alongside userId, honour the user record's role
       return seedUser;
     }
   }
@@ -80,4 +106,3 @@ export function handleApiError(err: unknown): NextResponse {
     { status: 500 },
   );
 }
-

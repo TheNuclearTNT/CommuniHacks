@@ -2,7 +2,11 @@ import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { getDb, schema } from '@/lib/db';
 import type { FollowUpAction } from '@/lib/types';
-import { getCurrentUser, handleApiError } from '@/lib/workflow/auth';
+import {
+  getCurrentUser,
+  getRequestTimestamp,
+  handleApiError,
+} from '@/lib/workflow/auth';
 import {
   mapActionRow,
   WorkflowError,
@@ -31,7 +35,7 @@ export async function PATCH(
     }
 
     const db = await getDb();
-    const nowIso = new Date().toISOString();
+    const nowIso = (await getRequestTimestamp()).toISOString();
 
     return await db.transaction(async (tx) => {
       const [existingAction] = await tx

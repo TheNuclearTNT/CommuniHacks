@@ -241,3 +241,11 @@ export async function getInsights(params?: {
   return request<InsightsResponse>(`/api/insights${buildQuery(params)}`);
 }
 
+// --- Dev / Seeding Helpers ---
+
+export async function resetDemo(): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>('/api/dev/reset-demo', {
+    method: 'POST',
+  });
+}
+

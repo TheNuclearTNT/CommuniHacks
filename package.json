@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx scripts/seed-users.ts"
+    "db:seed": "tsx scripts/seed-users.ts",
+    "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.15",
