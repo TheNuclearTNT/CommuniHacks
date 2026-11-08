@@ -12,6 +12,11 @@ export interface Draft {
   answers: Answers;
   transcript?: string;
   footageHoldRequested?: boolean;
+  // Question ids the AI filled (not the reporter): kept so the review page can
+  // still flag them "AI-filled — check" after leaving the chat.
+  aiFilled?: string[];
+  // Reporter chose not to attach their name (sent with the report).
+  anonymous?: boolean;
 }
 
 export function loadDraft(): Draft {

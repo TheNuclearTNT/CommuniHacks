@@ -6,6 +6,7 @@ import type { Answers } from "@/lib/types";
 import { useReportDraft } from "@/components/form/useReportDraft";
 import { getMe, transcribeIntake } from "@/lib/api-client";
 import { BackLink } from "@/components/form/BackLink";
+import { AnonymousToggle } from "@/components/form/AnonymousToggle";
 import { QUESTION_BY_ID } from "@/components/form/questions";
 import { DEMO_STORIES } from "@/lib/ai/demo-fixtures";
 import { ontarioToday, parseDatePhrase, parseTimePhrase } from "@/lib/ai/parse-when";
@@ -80,15 +81,22 @@ const DEMO_SCENARIOS = DEMO_STORIES.map((s) => ({ label: s.label, text: s.text }
 // incident. It never asks irrelevant branches (e.g. injury on an IT issue).
 export default function DescribePage() {
   const router = useRouter();
-  const { answers, setAnswer, mergeAiAnswers, setTranscript, hydrated } = useReportDraft();
+  const { answers, setAnswer, mergeAiAnswers, setTranscript, aiFilled, anonymous, setAnonymous, hydrated } =
+    useReportDraft();
 
   // The reporter is whoever is signed in, so the assistant never has to ask.
   useEffect(() => {
-    if (!hydrated || answers.q3) return;
+    if (!hydrated || answers.q3 || anonymous) return;
     getMe()
       .then((me) => me.name && setAnswer("q3", me.name))
       .catch(() => {});
-  }, [hydrated, answers.q3, setAnswer]);
+  }, [hydrated, answers.q3, anonymous, setAnswer]);
+
+  const chooseAnonymous = (value: boolean) => {
+    setAnonymous(value);
+    // Off again: clear it so the signed-in name is filled back in.
+    setAnswer("q3", value ? "Anonymous" : "");
+  };
 
   const [conversation, setConversation] = useState<Turn[]>([
     { who: "ai", text: OPENING },
@@ -100,6 +108,10 @@ export default function DescribePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
+  // Quick check: answers the AI filled without asking are shown for the
+  // reporter to confirm before the review page. Ids changed here stay listed.
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [quickCheckDone, setQuickCheckDone] = useState(false);
   const [askCount, setAskCount] = useState(0);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number] | null>(null);
   // Tap-to-answer choices for the assistant's current multiple-choice question.
@@ -297,6 +309,18 @@ export default function DescribePage() {
     setBusy(false);
   };
 
+  // Answers the AI filled that the reporter hasn't confirmed, in form order.
+  // The reporter's own name and description are left out.
+  const quickCheckRows = [...new Set([...aiFilled, ...checkedIds])]
+    .filter((id) => id !== "q3" && id !== "q32")
+    .map((id) => QUESTION_BY_ID[id])
+    .filter((q): q is NonNullable<typeof q> => Boolean(q))
+    .filter((q) => {
+      const v = answers[q.id as `q${number}`];
+      return v != null && v !== "" && !(Array.isArray(v) && v.length === 0);
+    })
+    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+
   if (!hydrated) return null;
 
   return (
@@ -307,6 +331,8 @@ export default function DescribePage() {
         Answer in your own words. I&apos;ll only ask what matters for your
         situation.
       </p>
+
+      <AnonymousToggle anonymous={anonymous} onChange={chooseAnonymous} />
 
       {/* Conversation */}
       <div className="mb-6 flex flex-col gap-3">
@@ -482,13 +508,73 @@ export default function DescribePage() {
           )}
         </>
       ) : (
-        <button
-          type="button"
-          onClick={() => router.push("/report/check")}
-          className="tap-target w-full rounded-xl bg-accent px-5 py-4 text-lg font-semibold text-white"
-        >
-          Review my report
-        </button>
+        <>
+          {quickCheckRows.length > 0 && !quickCheckDone && (
+            <section
+              aria-label="Check what I filled in"
+              className="mb-4 rounded-2xl border border-amber-300 bg-amber-50/60 p-4"
+            >
+              <p className="font-semibold text-slate-900">Before you review: please check what I filled in</p>
+              <p className="mb-3 text-sm text-slate-600">
+                I didn&apos;t ask you these. I filled them in from your story. Tap to change any that are wrong.
+              </p>
+              <ul className="space-y-3">
+                {quickCheckRows.map((q) => {
+                  const value = answers[q.id as `q${number}`];
+                  return (
+                    <li key={q.id} className="rounded-xl bg-white p-3">
+                      <p className="text-sm font-medium text-slate-800">{q.label}</p>
+                      {q.type === "single" && q.options && q.options.length <= 6 ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {q.options.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              aria-pressed={value === option}
+                              onClick={() => {
+                                setAnswer(q.id, option);
+                                setCheckedIds((ids) => (ids.includes(q.id) ? ids : [...ids, q.id]));
+                              }}
+                              className={
+                                "rounded-full border px-3 py-1.5 text-sm " +
+                                (value === option
+                                  ? "border-accent bg-accent text-white"
+                                  : "border-slate-300 bg-white text-slate-700 hover:border-accent")
+                              }
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-sm text-slate-600">
+                          {Array.isArray(value) ? value.join(", ") : String(value ?? "")}
+                          <span className="ml-2 text-xs text-slate-400">(change on the review page)</span>
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              <button
+                type="button"
+                onClick={() => setQuickCheckDone(true)}
+                className="tap-target mt-4 w-full rounded-xl bg-accent px-5 py-3 font-semibold text-white"
+              >
+                These look right
+              </button>
+            </section>
+          )}
+          {(quickCheckRows.length === 0 || quickCheckDone) && (
+            <button
+              type="button"
+              onClick={() => router.push("/report/check")}
+              className="tap-target w-full rounded-xl bg-accent px-5 py-4 text-lg font-semibold text-white"
+            >
+              Review my report
+            </button>
+          )}
+        </>
       )}
 
       <div className="mt-6 text-center">

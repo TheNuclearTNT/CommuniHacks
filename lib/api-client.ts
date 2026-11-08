@@ -98,6 +98,7 @@ export interface CreateIncidentInput {
   answers: Answers;
   transcript?: string;
   footageHoldRequested: boolean;
+  anonymous?: boolean;
 }
 
 export async function createIncident(input: CreateIncidentInput): Promise<Incident> {

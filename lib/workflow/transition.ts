@@ -56,7 +56,12 @@ export interface SubmitTransitionInput {
   answers: Answers;
   transcript?: string;
   footageHoldRequested?: boolean;
+  // Reporter chose not to attach their identity (TO CONFIRM with Langs).
+  anonymous?: boolean;
 }
+
+/** Stored as the reporter of an anonymous report instead of a user id. */
+export const ANONYMOUS_REPORTER_ID = 'anonymous';
 
 export interface AckTransitionInput {
   ackId?: string;
@@ -247,6 +252,12 @@ export async function submitNewIncident(
     : await getRequestTimestamp();
   const now = baseNow.toISOString();
 
+  // Anonymous: no user id anywhere on the record, and q3 says so.
+  const reporterId = input.anonymous ? ANONYMOUS_REPORTER_ID : actor.id;
+  if (input.anonymous) {
+    input = { ...input, answers: { ...input.answers, q3: 'Anonymous' } };
+  }
+
   const rawAi = await analyseIncident(input.answers, input.transcript);
   const ai = {
     ...rawAi,
@@ -275,7 +286,7 @@ export async function submitNewIncident(
         cycle: 1,
         status: 'SUBMITTED',
         currentOwnerRoles: ['SUPERVISOR'],
-        submittedBy: actor.id,
+        submittedBy: reporterId,
         supervisorId,
         answers: input.answers,
         transcript: input.transcript ?? null,
@@ -293,12 +304,13 @@ export async function submitNewIncident(
       time: now,
       incidentId: id,
       cycle: 1,
-      actorId: actor.id,
+      actorId: reporterId,
       kind: 'SUBMITTED',
       toStatus: 'SUBMITTED',
       payload: {
         suggestedTypes: types,
         footageHoldRequested: Boolean(input.footageHoldRequested),
+        anonymous: Boolean(input.anonymous),
       },
     });
 

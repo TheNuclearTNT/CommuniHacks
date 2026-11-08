@@ -32,7 +32,10 @@ export function useReportDraft() {
   const [footageHoldRequested, setFootageHold] = useState(() =>
     Boolean(loadDraft().footageHoldRequested)
   );
-  const [aiFilled, setAiFilled] = useState<Set<string>>(new Set());
+  const [anonymous, setAnonymous] = useState(() => Boolean(loadDraft().anonymous));
+  const [aiFilled, setAiFilled] = useState<Set<string>>(
+    () => new Set(loadDraft().aiFilled ?? [])
+  );
 
   // `hydrated` guards against an SSR/client markup mismatch: it reads false on
   // the server and during the first client render, then true once mounted.
@@ -47,9 +50,9 @@ export function useReportDraft() {
   // Persist on change (after hydration).
   useEffect(() => {
     if (!hydrated) return;
-    const d: Draft = { answers, transcript, footageHoldRequested };
+    const d: Draft = { answers, transcript, footageHoldRequested, aiFilled: [...aiFilled], anonymous };
     saveDraft(d);
-  }, [answers, transcript, footageHoldRequested, hydrated]);
+  }, [answers, transcript, footageHoldRequested, aiFilled, anonymous, hydrated]);
 
   const setAnswer = useCallback((id: string, value: AnswerValue) => {
     setAnswers((prev) => {
@@ -88,6 +91,7 @@ export function useReportDraft() {
     setTranscript(undefined);
     setFootageHold(false);
     setAiFilled(new Set());
+    setAnonymous(false);
     clearDraft();
   }, []);
 
@@ -100,6 +104,8 @@ export function useReportDraft() {
     footageHoldRequested,
     setFootageHold,
     aiFilled,
+    anonymous,
+    setAnonymous,
     hydrated,
     reset,
   };

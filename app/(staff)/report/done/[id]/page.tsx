@@ -3,10 +3,13 @@ import Link from "next/link";
 // /report/done/[id] — check mark, reference number, sent-to-supervisor, link.
 export default async function DonePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ anon?: string }>;
 }) {
   const { id } = await params;
+  const anonymous = (await searchParams).anon === "1";
   return (
     <main className="py-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xs">
@@ -23,6 +26,12 @@ export default async function DonePage({
         </h1>
         <p className="mt-2 text-sm text-slate-600">Your Langs reference number is</p>
         <p className="mt-1 font-mono text-2xl font-bold text-accent">{id}</p>
+        {anonymous && (
+          <p className="mx-auto mt-3 max-w-md rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Submitted anonymously: your name isn&apos;t attached. Write down this reference number. Anonymous
+            reports don&apos;t appear in My reports.
+          </p>
+        )}
 
         <p className="mx-auto mt-4 max-w-md text-sm leading-relaxed text-slate-600">
           Your report has been logged with a 24-hour supervisor review clock and AI discrepancy check. You can follow its live progress through all 5 routing stages at any time.

@@ -194,6 +194,7 @@ export async function POST(req: Request) {
       transcript:
         typeof body.transcript === 'string' ? body.transcript : undefined,
       footageHoldRequested: Boolean(body.footageHoldRequested),
+      anonymous: body.anonymous === true,
     });
 
     return NextResponse.json(incident);
