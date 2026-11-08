@@ -40,9 +40,11 @@ export function PathwayTracker({ detail }: { detail: IncidentDetail }) {
     [detail],
   );
 
-  const receivedBy = detail.acknowledgements.find(
-    (ack) => ack.role === 'EXEC_ASSISTANT' && ack.ackedAt,
-  );
+  // The backend records the EA's receipt as an EA_RECEIVED event (not an acknowledgement row).
+  const receivedEvent = [...detail.events]
+    .reverse()
+    .find((event) => event.kind === 'EA_RECEIVED' && event.cycle === detail.incident.cycle);
+  const receivedBy = receivedEvent ? { ackedBy: receivedEvent.actorId, ackedAt: receivedEvent.time } : null;
 
   const steps = [
     { key: 'submitted', label: 'Submitted', done: true },
@@ -75,7 +77,9 @@ export function PathwayTracker({ detail }: { detail: IncidentDetail }) {
             <span className="text-sm text-slate-700">
               {detail.incident.currentOwnerRoles.length > 0
                 ? detail.incident.currentOwnerRoles.map((role) => roleLabels[role]).join(', ')
-                : 'Unassigned'}
+                : detail.incident.status === 'CLOSED'
+                  ? 'Filed (no action needed)'
+                  : 'Unassigned'}
             </span>
           </div>
         </div>
