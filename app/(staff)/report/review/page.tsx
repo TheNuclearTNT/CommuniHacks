@@ -7,6 +7,7 @@ import { useReportDraft } from "@/components/form/useReportDraft";
 import { QUESTIONS, SECTIONS } from "@/components/form/questions";
 import { isVisible, missingRequired } from "@/components/form/logic";
 import { createIncident } from "@/lib/api-client";
+import { AnonymousToggle } from "@/components/form/AnonymousToggle";
 import { BackLink } from "@/components/form/BackLink";
 
 function hasAnswer(value: unknown): boolean {
@@ -34,6 +35,9 @@ export default function ReviewPage() {
     answers,
     transcript,
     footageHoldRequested,
+    anonymous,
+    setAnonymous,
+    setAnswer,
     hydrated,
     reset,
   } = useReportDraft();
@@ -57,9 +61,10 @@ export default function ReviewPage() {
         answers,
         transcript,
         footageHoldRequested,
+        anonymous,
       });
       reset();
-      router.push(`/report/done/${incident.id}`);
+      router.push(`/report/done/${incident.id}${anonymous ? "?anon=1" : ""}`);
     } catch {
       setError("Could not submit. Please try again.");
       setSubmitting(false);
@@ -88,6 +93,16 @@ export default function ReviewPage() {
       <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
         Review and submit
       </h1>
+
+      <div className="mt-4">
+        <AnonymousToggle
+          anonymous={anonymous}
+          onChange={(value) => {
+            setAnonymous(value);
+            setAnswer("q3", value ? "Anonymous" : "");
+          }}
+        />
+      </div>
       <p className="mt-1 mb-6 text-sm text-slate-600">
         Confirm the summary looks right, then send it to your supervisor for review.
       </p>

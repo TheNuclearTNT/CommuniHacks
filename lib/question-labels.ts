@@ -94,6 +94,7 @@ export const USER_DISPLAY_NAMES: Record<string, string> = {
 
 export function getUserDisplayName(userId?: string | null): string {
   if (!userId) return 'Unassigned';
+  if (userId === 'anonymous') return 'Anonymous reporter';
   return USER_DISPLAY_NAMES[userId] ?? userId;
 }
 
