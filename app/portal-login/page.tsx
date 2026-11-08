@@ -8,69 +8,97 @@ import { useRouter } from "next/navigation";
 // This is a demo gate only, not real access control.
 export default function PortalLogin() {
   const router = useRouter();
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState("123");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSignIn = async (pwd: string) => {
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/portal-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: pwd }),
       });
       if (!res.ok) {
-        setError("Wrong password. For this demo it is 123.");
+        setError("Incorrect password. For this demo, enter 123.");
         setBusy(false);
         return;
       }
       router.push("/portal/responses");
       router.refresh();
     } catch {
-      setError("Something went wrong. Try again.");
+      setError("Something went wrong. Please try again.");
       setBusy(false);
     }
   };
 
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await doSignIn(password);
+  };
+
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center px-6">
-      <Link href="/" className="mb-6 text-sm text-accent underline">
-        ← Back to home
-      </Link>
-      <h1 className="mb-1 text-2xl font-bold text-slate-900">
-        Supervisor / Executive sign in
-      </h1>
-      <p className="mb-6 text-slate-600">
-        Enter the demo password to see reports, trends and the form editor.
-      </p>
-
-      <form onSubmit={submit}>
-        <label className="mb-1 block text-sm font-medium text-slate-700">
-          Password
-        </label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-3 text-base text-slate-900 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-          autoFocus
-        />
-        {error && <p className="mb-4 text-warn">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="tap-target w-full rounded-xl bg-accent px-5 py-4 text-lg font-semibold text-white disabled:opacity-50"
+    <main className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md flex-col justify-center px-4 py-10">
+      <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-xs">
+        <Link
+          href="/"
+          className="mb-5 inline-flex items-center text-xs font-semibold text-accent hover:underline"
         >
-          {busy ? "Checking…" : "Sign in"}
-        </button>
-      </form>
+          ← Back to home
+        </Link>
 
-      <p className="mt-6 text-center text-xs text-slate-400">
-        Demo gate only — the password is not real security.
-      </p>
+        <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-blue-700">
+          Supervisor &amp; Leadership Portal
+        </span>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+          Portal sign in
+        </h1>
+        <p className="mt-1 mb-6 text-sm text-slate-600">
+          Access form responses, the 4-stage pathway board, trends, and the live 35-question form editor.
+        </p>
+
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label
+              htmlFor="portal-password"
+              className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.06em] text-slate-600"
+            >
+              Demo Password (pre-filled: 123)
+            </label>
+            <input
+              id="portal-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-3 text-base text-slate-900 outline-none transition focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20"
+              autoFocus
+            />
+          </div>
+
+          {error && (
+            <p
+              role="alert"
+              className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-medium text-amber-900"
+            >
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="tap-target w-full rounded-xl bg-accent px-5 py-3.5 text-base font-semibold text-white shadow-xs transition hover:bg-blue-800 disabled:opacity-50"
+          >
+            {busy ? "Signing in…" : "Enter Portal →"}
+          </button>
+        </form>
+
+        <p className="mt-5 text-center text-xs text-slate-400">
+          Demo gate only — you can also switch staff personas at any time from the top navigation bar.
+        </p>
+      </div>
     </main>
   );
 }

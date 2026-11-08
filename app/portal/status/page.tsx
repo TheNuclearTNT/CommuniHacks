@@ -9,11 +9,14 @@ import {
   reviewClock,
 } from "../responses/types";
 
-// Three buckets the brief asks for.
 type Bucket = "needs-review" | "in-progress" | "with-exec" | "closed";
 
 function bucketOf(status: Status): Bucket {
-  if (status === "SUBMITTED" || status === "SUPERVISOR_REVIEW" || status === "REOPENED") {
+  if (
+    status === "SUBMITTED" ||
+    status === "SUPERVISOR_REVIEW" ||
+    status === "REOPENED"
+  ) {
     return "needs-review";
   }
   if (status === "SPECIALTY_REVIEW") return "in-progress";
@@ -21,11 +24,41 @@ function bucketOf(status: Status): Bucket {
   return "closed";
 }
 
-const BUCKETS: { key: Bucket; title: string; note: string }[] = [
-  { key: "needs-review", title: "Needs review", note: "Waiting on a supervisor" },
-  { key: "in-progress", title: "Under specialty review", note: "Being acknowledged" },
-  { key: "with-exec", title: "Sent to Executive Assistant", note: "Final receipt" },
-  { key: "closed", title: "Filed and closed", note: "Done (can reopen)" },
+const BUCKETS: {
+  key: Bucket;
+  title: string;
+  note: string;
+  accentBorder: string;
+  badgeClass: string;
+}[] = [
+  {
+    key: "needs-review",
+    title: "Needs supervisor review",
+    note: "Stage 1–2 · Awaiting supervisor sign-off",
+    accentBorder: "border-t-4 border-t-amber-500",
+    badgeClass: "bg-amber-50 text-amber-800 border-amber-200",
+  },
+  {
+    key: "in-progress",
+    title: "Under specialty review",
+    note: "Stage 3 · Parallel specialty acknowledgements",
+    accentBorder: "border-t-4 border-t-blue-600",
+    badgeClass: "bg-blue-50 text-blue-800 border-blue-200",
+  },
+  {
+    key: "with-exec",
+    title: "With Executive Assistant",
+    note: "Stage 4 · Ready for final receipt",
+    accentBorder: "border-t-4 border-t-indigo-600",
+    badgeClass: "bg-indigo-50 text-indigo-800 border-indigo-200",
+  },
+  {
+    key: "closed",
+    title: "Filed and closed",
+    note: "Stage 5 · Complete (reopenable on same ID)",
+    accentBorder: "border-t-4 border-t-emerald-600",
+    badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-200",
+  },
 ];
 
 export default function StatusPage() {
@@ -47,32 +80,50 @@ export default function StatusPage() {
 
   return (
     <main>
-      <h1 className="mb-1 text-2xl font-bold text-slate-900">Report status</h1>
-      <p className="mb-6 text-slate-600">
-        Where each report sits in the pathway.
-      </p>
+      <div className="mb-6">
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-blue-700">
+          Portal · Live Pathway Board
+        </span>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          Report status across the pathway
+        </h1>
+        <p className="mt-1 text-sm text-slate-600">
+          See where every incident sits in the 5-stage Langs routing workflow. Click any card to open its full record.
+        </p>
+      </div>
 
-      {error && <p className="text-warn">{error}</p>}
-      {!items && !error && <p className="text-slate-500">Loading…</p>}
+      {error && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {error}
+        </div>
+      )}
+      {!items && !error && <p className="text-sm text-slate-500">Loading pathway board…</p>}
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {BUCKETS.map((b) => {
           const list = byBucket(b.key);
           return (
             <section
               key={b.key}
-              className="rounded-xl border border-slate-200 bg-white p-4"
+              className={`flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs ${b.accentBorder}`}
             >
-              <div className="mb-3">
-                <h2 className="font-semibold text-slate-900">
-                  {b.title}{" "}
-                  <span className="text-slate-400">({list.length})</span>
-                </h2>
-                <p className="text-xs text-slate-400">{b.note}</p>
+              <div className="mb-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-bold text-slate-900">{b.title}</h2>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-xs font-bold ${b.badgeClass}`}
+                  >
+                    {list.length}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">{b.note}</p>
               </div>
-              <div className="flex flex-col gap-2">
+
+              <div className="flex flex-col gap-2.5">
                 {list.length === 0 && (
-                  <p className="text-sm text-slate-400">None.</p>
+                  <p className="py-6 text-center text-xs text-slate-400">
+                    No records in this stage.
+                  </p>
                 )}
                 {list.map((it) => {
                   const clock = reviewClock(it);
@@ -82,28 +133,31 @@ export default function StatusPage() {
                     <Link
                       key={it.id}
                       href={`/records/${it.id}`}
-                      className="rounded-lg border border-slate-200 p-3 text-sm hover:border-accent"
+                      className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm transition hover:border-blue-300 hover:bg-white hover:shadow-2xs"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-slate-900">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-bold text-slate-900">
                           {it.id}
                         </span>
                         {b.key === "needs-review" && (
                           <span
-                            className={
-                              urgent ? "text-critical" : "text-slate-400"
-                            }
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              urgent
+                                ? "bg-red-50 text-red-700"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
                           >
                             {clock.text}
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 line-clamp-2 text-slate-600">
+                      <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-relaxed text-slate-800">
                         {it.summary}
                       </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {it.location} · {STATUS_LABEL[it.status]}
-                      </p>
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+                        <span className="font-medium text-slate-600">{it.location}</span>
+                        <span>{STATUS_LABEL[it.status]}</span>
+                      </div>
                     </Link>
                   );
                 })}

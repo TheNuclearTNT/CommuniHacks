@@ -76,7 +76,10 @@ export async function getMe(): Promise<User> {
   return request<User>('/api/me');
 }
 
-export async function setMe(userId: string): Promise<User> {
+export async function setMe(
+  input: string | { userId: string; role?: Role },
+): Promise<User> {
+  const userId = typeof input === 'string' ? input : input.userId;
   return request<User>('/api/me', {
     method: 'POST',
     body: JSON.stringify({ userId }),

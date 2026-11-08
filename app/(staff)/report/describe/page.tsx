@@ -27,6 +27,22 @@ interface ConverseResponse {
 const OPENING = "Hi, I'm here to help you report what happened. Tell me what happened — where, when, and who was involved.";
 const MAX_AI_QUESTIONS = 6;
 
+// Quick-fill example stories for demos (from the team's earlier version).
+const DEMO_SCENARIOS = [
+  {
+    label: "Privacy · Misdirected email",
+    text: "This morning around 9:15 AM at Main Site, a staff member accidentally replied-all to an external community partner email thread that had a client schedule spreadsheet attached. We immediately recalled the message, notified our supervisor, and asked the recipient to delete the attachment.",
+  },
+  {
+    label: "Staff Injury · Wet stairwell fall",
+    text: "At 2:30 PM today at Grow Community Centre, a youth worker slipped on melted snow near the east stairwell landing and twisted their right ankle. A first aid ice pack was applied on site and they went to a walk-in clinic for an X-ray. A wet floor cone was placed immediately.",
+  },
+  {
+    label: "Behavioural · Lobby escalation",
+    text: "Around 3:45 PM on Friday at Main Site reception, a visitor became verbally agitated at the front desk, shouted at two reception staff members, and knocked over a brochure stand before leaving.",
+  },
+];
+
 // /report/describe — an AI-led conversation. The assistant asks (out loud via
 // ElevenLabs when a key is set, otherwise on screen), the reporter speaks or
 // types, and the AI decides which of the 35 questions actually matter for this
@@ -260,6 +276,28 @@ export default function DescribePage() {
               Send
             </button>
           </div>
+
+          {/* Demo quick-fill: only offered before the reporter has said anything */}
+          {conversation.length <= 1 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-medium text-slate-400">
+                Or try an example (for demos)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {DEMO_SCENARIOS.map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void submitReply(s.text)}
+                    className="rounded-full border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:border-accent hover:text-accent disabled:opacity-50"
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <button

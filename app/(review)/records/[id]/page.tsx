@@ -2,287 +2,657 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, EmptyState, StatusPill, TypeChip } from '@/components/ui';
+import { useCallback, useEffect, useState } from 'react';
 import { PathwayTracker } from '@/components/tracker/PathwayTracker';
-import { ackIncident, getIncident, getMe, receiveIncident, reopenIncident } from '@/lib/api-client';
+import {
+  AiLabel,
+  Badge,
+  Button,
+  Card,
+  ClockChip,
+  EmptyState,
+  SeverityDot,
+  StatusPill,
+  TypeChip,
+} from '@/components/ui';
+import {
+  ackIncident,
+  getIncident,
+  getMe,
+  markClockMet,
+  receiveIncident,
+  reopenIncident,
+  updateAction,
+} from '@/lib/api-client';
 import { getNeelMockIncident } from '@/lib/mock/neel';
-import type { IncidentDetail, Role } from '@/lib/types';
+import {
+  formatAnswerValue,
+  getClockLabel,
+  getQuestionLabel,
+  getQuestionSection,
+  getRoleLabel,
+  getUserDisplayName,
+  SECTION_DISPLAY_NAMES,
+} from '@/lib/question-labels';
+import { deriveTypes, extractLocation } from '@/lib/workflow/rules';
+import type { FollowUpAction, IncidentDetail, Role } from '@/lib/types';
 
-function formatAnswer(value: unknown): string {
-  if (Array.isArray(value)) return value.join(', ');
-  if (value == null) return 'Not answered';
-  return String(value);
+function formatDateTime(value?: string | null): string {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('en-CA', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 }
 
 export default function RecordDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
-  const [role, setRole] = useState<Role>('SUPERVISOR');
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [reopening, setReopening] = useState(false);
+  const [viewerRole, setViewerRole] = useState<Role>('SUPERVISOR');
+  const [loading, setLoading] = useState(true);
+  const [showAllFields, setShowAllFields] = useState(false);
+  const [busyAction, setBusyAction] = useState(false);
+  const [ackComment, setAckComment] = useState('');
   const [reopenReason, setReopenReason] = useState('');
+  const [showReopenBox, setShowReopenBox] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
-  async function runAction(action: () => Promise<IncidentDetail>) {
-    setBusy(true);
-    setActionError(null);
-    try {
-      setDetail(await action());
-      setReopening(false);
-      setReopenReason('');
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
+  const loadRecord = useCallback(async () => {
     if (!id) return;
-
-    let active = true;
-
-    Promise.all([
-      getIncident(id).catch(() => getNeelMockIncident(id) ?? null),
-      getMe().catch(() => ({ role: 'SUPERVISOR' as Role })),
-    ])
-      .then(([incident, me]) => {
-        if (!active) return;
-        setDetail(incident);
-        setRole(me.role);
-      })
-      .catch(() => {
-        if (active) setDetail(getNeelMockIncident(id) ?? null);
-      });
-
-    return () => {
-      active = false;
-    };
+    try {
+      const [me, loaded] = await Promise.all([
+        getMe().catch(() => ({ id: 'u-bill', name: 'Bill Teasdale', role: 'SUPERVISOR' as Role })),
+        getIncident(id).catch(() => getNeelMockIncident(id) ?? null),
+      ]);
+      setViewerRole(me.role);
+      setDetail(loaded);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
-  const groupedAnswers = useMemo(() => {
-    if (!detail) return [] as Array<{ title: string; entries: Array<[string, unknown]> }>;
+  useEffect(() => {
+    void loadRecord();
+    const handleRoleChanged = () => void loadRecord();
+    window.addEventListener('langs:role-changed', handleRoleChanged);
+    return () => window.removeEventListener('langs:role-changed', handleRoleChanged);
+  }, [loadRecord]);
 
-    const entries = Object.entries(detail.incident.answers ?? {}).sort(([a], [b]) => Number(a.slice(1)) - Number(b.slice(1)));
-    const sections = [
-      { title: 'Report details', test: (q: number) => q <= 8 },
-      { title: 'Immediate actions', test: (q: number) => q > 8 && q <= 18 },
-      { title: 'Review summary', test: (q: number) => q > 18 },
-    ];
-
-    return sections
-      .map((section) => {
-        const items = entries.filter(([key]) => {
-          const q = Number(key.replace('q', ''));
-          return Number.isFinite(q) && section.test(q);
-        });
-        return { title: section.title, entries: items };
-      })
-      .filter((section) => section.entries.length > 0);
-  }, [detail]);
-
-  if (!detail) {
+  if (loading) {
     return (
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <EmptyState title="Record not found" description="This incident may still be loading or no longer exists." />
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <p className="text-slate-500">Loading incident record…</p>
       </main>
     );
   }
 
-  const myAck = detail.acknowledgements.find(
-    (ack) => ack.role === role && ack.cycle === detail.incident.cycle && !ack.ackedAt,
+  if (!detail) {
+    return (
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <EmptyState
+          title="Incident not found"
+          description="We could not find a record with this reference number."
+        />
+      </main>
+    );
+  }
+
+  const { incident, reviews, acknowledgements, actions, clocks } = detail;
+  const answers = incident.answers ?? {};
+  const latestReview = reviews[reviews.length - 1] ?? null;
+  const confirmedOrDerivedTypes =
+    latestReview?.confirmedTypes ??
+    incident.ai?.suggestedTypes ??
+    deriveTypes(answers);
+  const severity =
+    latestReview?.severity ??
+    (typeof answers.q13 === 'string' ? answers.q13 : 'Less Serious');
+  const location = extractLocation(answers);
+  const incidentDate = formatAnswerValue(answers.q1) ?? formatDateTime(incident.createdAt);
+  const incidentTime = formatAnswerValue(answers.q2) ?? '';
+  const narrative = formatAnswerValue(answers.q32) ?? 'No narrative summary provided.';
+  const recommendations = formatAnswerValue(answers.q33);
+
+  // Group structured form answers by section
+  const sectionsOrder = ['incident details', 'type of incident', 'summary', 'other'];
+  const groupedAnswers: Record<string, [string, unknown][]> = {
+    'incident details': [],
+    'type of incident': [],
+    summary: [],
+    other: [],
+  };
+
+  for (const [key, val] of Object.entries(answers)) {
+    if (!showAllFields && formatAnswerValue(val) === null) continue;
+    const sec = getQuestionSection(key);
+    if (!groupedAnswers[sec]) groupedAnswers[sec] = [];
+    groupedAnswers[sec].push([key, val]);
+  }
+
+  // Role-aware capabilities on this record
+  const canSupervisorReview =
+    ['SUBMITTED', 'REOPENED', 'SUPERVISOR_REVIEW'].includes(incident.status) &&
+    (viewerRole === 'SUPERVISOR' || viewerRole === 'DIRECTOR_OPS');
+
+  const currentCycleAcks = acknowledgements.filter((a) => a.cycle === incident.cycle);
+  const activeAcks = currentCycleAcks.length > 0 ? currentCycleAcks : acknowledgements;
+
+  const pendingAckForViewer = activeAcks.find(
+    (a) => a.role === viewerRole && !a.ackedAt,
   );
-  const canAcknowledge = detail.incident.status === 'SPECIALTY_REVIEW' && Boolean(myAck);
-  const canOpen = role === 'SUPERVISOR' && ['SUBMITTED', 'REOPENED'].includes(detail.incident.status);
-  const canReceive = role === 'EXEC_ASSISTANT' && detail.incident.status === 'WITH_EA';
-  const canReopen = (role === 'SUPERVISOR' || role === 'EXEC_ASSISTANT') && detail.incident.status === 'CLOSED';
-  const queueHref =
-    role === 'EXEC_ASSISTANT' ? '/ea' : role === 'SUPERVISOR' ? '/supervisor' : role === 'EXECUTIVE' ? '/dashboard' : '/inbox';
+  const anyPendingAck = activeAcks.find((a) => !a.ackedAt);
+
+  const handleAcknowledge = async (ackIdToUse: string, roleLabelToUse: Role) => {
+    setBusyAction(true);
+    setFeedbackMsg(null);
+    try {
+      await ackIncident(incident.id, {
+        ackId: ackIdToUse,
+        comment: ackComment.trim() || `Reviewed and acknowledged by ${getRoleLabel(roleLabelToUse)}.`,
+      });
+      setAckComment('');
+      setFeedbackMsg(`Acknowledged as ${getRoleLabel(roleLabelToUse)}.`);
+      await loadRecord();
+    } catch (err) {
+      setFeedbackMsg(
+        err instanceof Error ? err.message : 'Switch to the matching specialty persona in the header to acknowledge.',
+      );
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleReceive = async () => {
+    setBusyAction(true);
+    setFeedbackMsg(null);
+    try {
+      await receiveIncident(incident.id);
+      setFeedbackMsg('Record received and filed.');
+      await loadRecord();
+    } catch (err) {
+      setFeedbackMsg(
+        err instanceof Error ? err.message : 'Switch to Claire Beaumont (Executive Assistant) in the top bar to file.',
+      );
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleReopen = async () => {
+    setBusyAction(true);
+    setFeedbackMsg(null);
+    try {
+      await reopenIncident(incident.id, {
+        reason: reopenReason.trim() || 'Additional follow-up details received.',
+      });
+      setShowReopenBox(false);
+      setReopenReason('');
+      setFeedbackMsg('Record reopened on the same Incident ID.');
+      await loadRecord();
+    } catch (err) {
+      setFeedbackMsg(err instanceof Error ? err.message : 'Could not reopen record.');
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleActionStatusChange = async (actionId: string, status: FollowUpAction['status']) => {
+    try {
+      await updateAction(actionId, { status });
+      await loadRecord();
+    } catch {
+      // Ignore if unauthorized
+    }
+  };
+
+  const handleMarkClockMet = async (clockId: string) => {
+    try {
+      await markClockMet(clockId);
+      await loadRecord();
+    } catch {
+      // Ignore if unauthorized
+    }
+  };
+
+  const targetAck = pendingAckForViewer ?? anyPendingAck;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <div className="sticky top-0 z-10 mb-6 border-b border-slate-200 bg-white/80 py-3 backdrop-blur-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <Link href={queueHref} className="text-sm font-medium text-blue-700 underline-offset-2 hover:underline">
-              Back to queue
+    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+      {/* Top Record Header */}
+      <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <Link href="/supervisor" className="font-semibold text-accent hover:underline">
+              ← Back to queues
             </Link>
-            <span className="text-sm text-slate-500">{detail.incident.id}</span>
+            <span>·</span>
+            <span>Viewing as {getRoleLabel(viewerRole)}</span>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {canOpen ? (
-              <Link
-                href={`/supervisor/review/${encodeURIComponent(detail.incident.id)}`}
-                className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-              >
-                Open / review
-              </Link>
-            ) : null}
-            {canAcknowledge && myAck ? (
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => runAction(() => ackIncident(detail.incident.id, { ackId: myAck.id }))}
-              >
-                {busy ? 'Acknowledging…' : 'Acknowledge'}
-              </Button>
-            ) : null}
-            {canReceive ? (
-              <Button disabled={busy} onClick={() => runAction(() => receiveIncident(detail.incident.id))}>
-                {busy ? 'Filing…' : 'Confirm receipt and file'}
-              </Button>
-            ) : null}
-            {canReopen && !reopening ? (
-              <Button variant="secondary" disabled={busy} onClick={() => setReopening(true)}>
-                Reopen
-              </Button>
-            ) : null}
+
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <SeverityDot severity={severity} />
+            <h1 className="font-mono text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              {incident.id}
+            </h1>
+            <StatusPill status={incident.status} />
+            {confirmedOrDerivedTypes.map((type) => (
+              <TypeChip key={type} type={type} />
+            ))}
           </div>
+
+          <p className="mt-2 text-sm text-slate-600">
+            <strong className="font-semibold text-slate-800">{location}</strong> · Incident date:{' '}
+            {incidentDate}
+            {incidentTime ? ` at ${incidentTime}` : ''} · Reported by{' '}
+            <strong className="font-medium text-slate-800">
+              {getUserDisplayName(incident.submittedBy)}
+            </strong>
+          </p>
         </div>
-        {canReopen && reopening ? (
-          <form
-            className="mt-3 flex flex-col gap-2 md:flex-row md:items-end"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (reopenReason.trim()) runAction(() => reopenIncident(detail.incident.id, { reason: reopenReason.trim() }));
-            }}
-          >
-            <label className="flex-1 text-sm font-medium text-slate-700">
-              Reason for reopening
+
+        {/* Sticky Role-Aware Action Controls */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {['SUBMITTED', 'REOPENED', 'SUPERVISOR_REVIEW'].includes(incident.status) && (
+            <Link
+              href={`/supervisor/review/${incident.id}`}
+              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-blue-800"
+            >
+              {canSupervisorReview ? 'Complete Supervisor Review →' : 'Open Supervisor Review Form →'}
+            </Link>
+          )}
+
+          {incident.status === 'SPECIALTY_REVIEW' && targetAck && (
+            <div className="flex flex-wrap items-center gap-2">
               <input
-                value={reopenReason}
-                onChange={(event) => setReopenReason(event.target.value)}
-                required
-                placeholder="e.g. Follow-up needed: storage still unsafe"
-                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal"
+                type="text"
+                value={ackComment}
+                onChange={(e) => setAckComment(e.target.value)}
+                placeholder="Optional sign-off note…"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800"
               />
-            </label>
-            <div className="flex gap-2">
-              <Button type="submit" disabled={busy || !reopenReason.trim()}>
-                {busy ? 'Reopening…' : 'Reopen record'}
-              </Button>
-              <Button type="button" variant="ghost" onClick={() => setReopening(false)}>
-                Cancel
+              <Button
+                variant="primary"
+                disabled={busyAction}
+                onClick={() => handleAcknowledge(targetAck.id, targetAck.role)}
+              >
+                {busyAction
+                  ? 'Signing off…'
+                  : `Acknowledge (${getRoleLabel(targetAck.role)})`}
               </Button>
             </div>
-          </form>
-        ) : null}
-        {actionError ? (
-          <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            {actionError}
-          </p>
-        ) : null}
+          )}
+
+          {incident.status === 'WITH_EA' && (
+            <Button
+              variant="primary"
+              disabled={busyAction}
+              onClick={handleReceive}
+            >
+              {busyAction ? 'Filing…' : 'Confirm EA Receipt & File'}
+            </Button>
+          )}
+
+          {incident.status === 'CLOSED' && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowReopenBox((v) => !v)}
+            >
+              Reopen Record
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-6">
-        <PathwayTracker detail={detail} />
+      {feedbackMsg && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
+          {feedbackMsg}
+        </div>
+      )}
 
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-6">
-            {groupedAnswers.map((section) => (
-              <Card key={section.title} className="p-4">
-                <h2 className="mb-4 text-lg font-semibold text-slate-900">{section.title}</h2>
-                <div className="space-y-3">
-                  {section.entries.map(([key, value]) => (
-                    <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{key}</p>
-                      <p className="mt-1 text-sm text-slate-700">{formatAnswer(value)}</p>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            ))}
-
-            {detail.incident.transcript ? (
-              <Card className="p-4">
-                <h2 className="text-lg font-semibold text-slate-900">Transcript</h2>
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-sm font-medium text-slate-700">Show transcript</summary>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">{detail.incident.transcript}</p>
-                </details>
-              </Card>
-            ) : null}
+      {showReopenBox && (
+        <Card className="border-amber-200 bg-amber-50/60 p-4">
+          <label className="block text-xs font-bold uppercase tracking-wider text-amber-900">
+            Reopen {incident.id} (increments cycle on the same Incident ID)
+          </label>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="text"
+              value={reopenReason}
+              onChange={(e) => setReopenReason(e.target.value)}
+              placeholder="Enter reason for reopening (e.g., WSIB healthcare follow-up received)…"
+              className="flex-1 rounded-xl border border-amber-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+            />
+            <Button variant="secondary" onClick={() => setShowReopenBox(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" disabled={busyAction} onClick={handleReopen}>
+              Confirm Reopen
+            </Button>
           </div>
+        </Card>
+      )}
 
-          <div className="space-y-6">
-            {detail.incident.ai ? (
-              <Card className="p-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold text-slate-900">AI summary</h2>
-                  <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-700">
-                    AI-generated — check
-                  </span>
-                </div>
-                <ul className="space-y-2 text-sm text-slate-700">
-                  {detail.incident.ai.summaryBullets.map((bullet) => (
-                    <li key={bullet} className="flex gap-2">
-                      <span className="mt-1 inline-block h-2 w-2 rounded-full bg-blue-600" />
+      {/* 5-Stage Pathway Tracker */}
+      <PathwayTracker detail={detail} />
+
+      {/* Main Two-Column Content */}
+      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        {/* Left column: Narrative Highlight + Sectioned Form Responses */}
+        <div className="space-y-6">
+          {/* Narrative & Key Highlights Card */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 className="text-base font-bold text-slate-900">Incident Summary &amp; Narrative</h2>
+              <Badge tone="slate">Q32 &amp; Q33</Badge>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                Description of Incident (Q32)
+              </p>
+              <p className="mt-1.5 text-sm leading-relaxed text-slate-900">{narrative}</p>
+            </div>
+
+            {recommendations && (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3.5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                  Staff Recommendations for Prevention (Q33)
+                </p>
+                <p className="mt-1 text-sm text-slate-700">{recommendations}</p>
+              </div>
+            )}
+
+            {incident.transcript && (
+              <div className="mt-3 rounded-xl border border-blue-200/80 bg-blue-50/30 p-3.5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-accent">
+                  Voice Intake Transcript
+                </p>
+                <p className="mt-1 text-sm italic text-slate-700">&ldquo;{incident.transcript}&rdquo;</p>
+              </div>
+            )}
+          </Card>
+
+          {/* Structured 35-Question Form Responses by Section */}
+          <Card className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Langs Incident Report Form Responses
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Human-readable labels mapped from the 35-question Langs form
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllFields((v) => !v)}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                {showAllFields ? 'Hide blank optional fields' : 'Show all 35 fields'}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-6">
+              {sectionsOrder.map((sec) => {
+                const entries = groupedAnswers[sec] ?? [];
+                if (entries.length === 0) return null;
+                return (
+                  <div key={sec}>
+                    <h3 className="mb-2.5 text-xs font-bold uppercase tracking-[0.08em] text-blue-800">
+                      {SECTION_DISPLAY_NAMES[sec] ?? sec}
+                    </h3>
+                    <div className="grid gap-2.5 sm:grid-cols-2">
+                      {entries.map(([key, value]) => {
+                        const formatted = formatAnswerValue(value);
+                        return (
+                          <div
+                            key={key}
+                            className="rounded-xl border border-slate-200/90 bg-slate-50/60 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-xs font-semibold text-slate-700">
+                                {getQuestionLabel(key)}
+                              </p>
+                              <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+                                {key.toUpperCase()}
+                              </span>
+                            </div>
+                            <p className="mt-1.5 text-sm font-medium text-slate-900">
+                              {formatted ?? (
+                                <span className="font-normal italic text-slate-400">
+                                  Not answered
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+
+        {/* Right column: AI Brief, Supervisor Review, Follow-up Actions, and Compliance Clocks */}
+        <div className="space-y-6">
+          {/* AI Summary & Discrepancies */}
+          {incident.ai && (
+            <Card className="p-5">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <h2 className="text-base font-bold text-slate-900">AI Clinical Triage Brief</h2>
+                <AiLabel />
+              </div>
+
+              {incident.ai.summaryBullets.length > 0 && (
+                <ul className="mt-3.5 space-y-2 text-sm text-slate-700">
+                  {incident.ai.summaryBullets.map((bullet) => (
+                    <li key={bullet} className="flex gap-2.5">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                       <span>{bullet}</span>
                     </li>
                   ))}
                 </ul>
-              </Card>
-            ) : null}
+              )}
 
-            <Card className="p-4">
-              <h2 className="text-lg font-semibold text-slate-900">Supervisor review</h2>
-              {detail.reviews.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No review submitted yet.</p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {detail.reviews.map((review) => (
-                    <div key={`${review.incidentId}-${review.cycle}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <StatusPill status={detail.incident.status} />
-                        {review.confirmedTypes.map((type) => (
-                          <TypeChip key={`${review.incidentId}-${type}`} type={type} />
-                        ))}
+              {incident.ai.discrepancies.length > 0 && (
+                <div className="mt-4 border-t border-slate-100 pt-3.5">
+                  <p className="text-xs font-bold uppercase tracking-[0.08em] text-amber-800">
+                    Discrepancy Checks ({incident.ai.discrepancies.length})
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {incident.ai.discrepancies.map((d, idx) => (
+                      <div
+                        key={`${d.field}-${idx}`}
+                        className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"
+                      >
+                        <p className="font-bold">
+                          {getQuestionLabel(d.field)} ({d.field.toUpperCase()})
+                        </p>
+                        <p className="mt-0.5 text-amber-900">{d.note}</p>
                       </div>
-                      <p className="text-sm text-slate-700"><strong>Severity:</strong> {review.severity}</p>
-                      <p className="mt-2 text-sm text-slate-700"><strong>Notes:</strong> {review.notes}</p>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </Card>
+          )}
 
-            <Card className="p-4">
-              <h2 className="text-lg font-semibold text-slate-900">Follow-up actions</h2>
-              {detail.actions.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No follow-up actions recorded.</p>
-              ) : (
-                <ul className="mt-3 space-y-2">
-                  {detail.actions.map((action) => (
-                    <li key={action.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                      <div className="flex items-center justify-between gap-2">
-                        <strong>{action.title}</strong>
-                        <span className="text-xs text-slate-500">{action.status}</span>
+          {/* Supervisor Review Card */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 className="text-base font-bold text-slate-900">Supervisor Review Record</h2>
+              <Badge tone={latestReview ? 'green' : 'amber'}>
+                {latestReview ? 'Completed' : 'Pending'}
+              </Badge>
+            </div>
+
+            {latestReview ? (
+              <div className="mt-3.5 space-y-3 text-sm text-slate-700">
+                <div className="grid grid-cols-2 gap-2.5 rounded-xl bg-slate-50 p-3 text-xs">
+                  <div>
+                    <span className="text-slate-500">Reviewed by</span>
+                    <p className="mt-0.5 font-semibold text-slate-900">
+                      {getUserDisplayName(latestReview.reviewerId)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Reviewed at</span>
+                    <p className="mt-0.5 font-semibold text-slate-900">
+                      {formatDateTime(latestReview.submittedAt)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Confirmed severity</span>
+                    <p className="mt-0.5 font-semibold text-slate-900">
+                      {latestReview.severity}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Footage hold</span>
+                    <p className="mt-0.5 font-semibold text-slate-900">
+                      {latestReview.footageHold ? 'Requested ✓' : 'No'}
+                    </p>
+                  </div>
+                </div>
+
+                {latestReview.notes && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Supervisor Investigation Notes
+                    </p>
+                    <p className="mt-1 text-sm text-slate-800">
+                      {latestReview.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-3.5">
+                <p className="text-sm text-slate-600">
+                  Supervisor review has not been submitted yet.
+                </p>
+                <Link
+                  href={`/supervisor/review/${incident.id}`}
+                  className="mt-3 inline-flex rounded-lg bg-accent px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-800"
+                >
+                  Open Supervisor Review Form →
+                </Link>
+              </div>
+            )}
+          </Card>
+
+          {/* Follow-up Corrective Actions */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 className="text-base font-bold text-slate-900">
+                Follow-up Actions ({actions.length})
+              </h2>
+              <Badge tone="slate">Corrective tasks</Badge>
+            </div>
+
+            {actions.length === 0 ? (
+              <p className="mt-3.5 text-sm text-slate-500">
+                No follow-up corrective actions assigned to this record.
+              </p>
+            ) : (
+              <div className="mt-3.5 space-y-2.5">
+                {actions.map((action) => (
+                  <div
+                    key={action.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-900">{action.title}</p>
+                      <select
+                        aria-label={`Status for ${action.title}`}
+                        value={action.status}
+                        onChange={(e) =>
+                          handleActionStatusChange(
+                            action.id,
+                            e.target.value as FollowUpAction['status'],
+                          )
+                        }
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700"
+                      >
+                        <option value="NOT_STARTED">NOT STARTED</option>
+                        <option value="IN_PROGRESS">IN PROGRESS</option>
+                        <option value="DONE">DONE ✓</option>
+                      </select>
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      Owner: <strong className="text-slate-700">{getRoleLabel(action.ownerRole)}</strong> · Due:{' '}
+                      {formatDateTime(action.dueAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Statutory & Internal Compliance Clocks */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 className="text-base font-bold text-slate-900">
+                Compliance &amp; SLA Clocks ({clocks.length})
+              </h2>
+              <Badge tone="blue">WSIB / OHSA / Internal</Badge>
+            </div>
+
+            {clocks.length === 0 ? (
+              <p className="mt-3.5 text-sm text-slate-500">
+                No active compliance clocks on this record.
+              </p>
+            ) : (
+              <div className="mt-3.5 space-y-2.5">
+                {clocks.map((clock) => {
+                  const isMet = Boolean(clock.metAt);
+                  return (
+                    <div
+                      key={clock.id}
+                      className={`rounded-xl border p-3 ${
+                        isMet
+                          ? 'border-emerald-200 bg-emerald-50/30'
+                          : 'border-slate-200 bg-slate-50/70'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold text-slate-900">
+                            {getClockLabel(clock.kind)}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            Deadline: {formatDateTime(clock.dueAt)}
+                          </p>
+                        </div>
+
+                        {isMet ? (
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                            Met ✓ ({formatDateTime(clock.metAt)})
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <ClockChip dueAt={clock.dueAt} />
+                            <button
+                              type="button"
+                              onClick={() => handleMarkClockMet(clock.id)}
+                              className="rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-xs font-semibold text-accent hover:bg-blue-50"
+                            >
+                              Mark met
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <p className="mt-1">Due: {new Date(action.dueAt).toLocaleString('en-CA')}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-
-            <Card className="p-4">
-              <h2 className="text-lg font-semibold text-slate-900">Clocks</h2>
-              {detail.clocks.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No compliance clocks are active.</p>
-              ) : (
-                <ul className="mt-3 space-y-2">
-                  {detail.clocks.map((clock) => (
-                    <li key={clock.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                      <p className="font-medium text-slate-900">{clock.kind}</p>
-                      <p className="mt-1">Due: {new Date(clock.dueAt).toLocaleString('en-CA')}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
         </div>
       </div>
     </main>
