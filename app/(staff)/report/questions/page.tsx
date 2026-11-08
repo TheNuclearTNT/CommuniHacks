@@ -24,40 +24,46 @@ export default function QuestionsPage() {
 
   const id = missing[0];
   const q = QUESTION_BY_ID[id];
-  // Position of this question among the originally-missing set.
   const total = missing.length;
 
   return (
     <main>
       <BackLink href="/report/check" label="Back to all answers" />
-      <p className="mb-4 text-sm text-slate-500">
-        {1} of {total} to answer
-      </p>
-      <Field
-        q={q}
-        value={answers[id as `q${number}`]}
-        onChange={(v) => setAnswer(id, v)}
-      />
+
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-blue-700">
+          Step 2 of 4 · Required Questions
+        </span>
+        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+          {total} {total === 1 ? "question" : "questions"} left
+        </span>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
+        <Field
+          q={q}
+          value={answers[id as `q${number}`]}
+          onChange={(v) => setAnswer(id, v)}
+        />
+      </div>
 
       <div className="mt-6 flex gap-3">
         <button
           type="button"
           onClick={() => router.push("/report/check")}
-          className="tap-target flex-1 rounded-xl border border-slate-300 px-5 py-4 text-lg"
+          className="tap-target flex-1 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-base font-semibold text-slate-700 hover:bg-slate-50"
         >
-          Back
+          View all questions
         </button>
         <button
           type="button"
           onClick={() => {
-            // Re-evaluate; if more remain, this page re-renders the next one.
             const stillMissing = missingRequired(answers);
             if (stillMissing.length <= 1) router.push("/report/extras");
-            // else: staying on the page shows the next missing question
           }}
-          className="tap-target flex-1 rounded-xl bg-accent px-5 py-4 text-lg font-semibold text-white"
+          className="tap-target flex-1 rounded-xl bg-accent px-5 py-3.5 text-base font-semibold text-white shadow-xs hover:bg-blue-800"
         >
-          Next
+          Next →
         </button>
       </div>
     </main>

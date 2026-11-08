@@ -1,36 +1,41 @@
 @import "tailwindcss";
 
-/* Light theme only. The app is a clinical tool; a dark scheme made several
-   screens black-on-black, so we pin a light palette and do NOT follow the OS
-   dark-mode preference. */
 :root {
-  --background: #ffffff;
-  --foreground: #0f172a; /* slate-900 */
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  /* Single primary accent (calm clinical blue) + semantic status colours. */
+  --accent: #1d4ed8;
+  --accent-hover: #1e40af;
+  --accent-light: #eff6ff;
+  --critical: #dc2626;
+  --warn: #d97706;
+  --success: #059669;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-light: var(--accent-light);
+  --color-critical: var(--critical);
+  --color-warn: var(--warn);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Shared max-widths so staff and review layouts stay consistent. */
+  --spacing-staff: 36rem; /* 576px */
+  --spacing-review: 80rem; /* 1280px */
 }
 
-/* Make `dark:` utilities opt-in via a `.dark` class on an ancestor, not the OS
-   setting. We never add that class, so dark variants stay off everywhere. */
-@custom-variant dark (&:where(.dark, .dark *));
-
-/* Calm, clinical palette: one blue accent, red only for Critical,
-   amber for warnings/overdue. */
-@theme {
-  --color-accent: #1d4ed8;
-  --color-accent-light: #eff6ff;
-  --color-critical: #dc2626;
-  --color-warn: #d97706;
-  --container-staff: 480px;
-}
-
+/* Light-only clinical theme across all devices. */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Minimum tap target for staff mobile views (48px). */
+.tap-target {
+  min-height: 3rem;
 }

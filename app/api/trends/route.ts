@@ -234,29 +234,40 @@ export async function GET(req: Request) {
       })
       .sort((a, b) => (a.dow !== b.dow ? a.dow - b.dow : a.hour - b.hour));
 
-    // 5. stageDurations: join events to incidents to filter by site and from/to window
+    // 5. stageDurations: one span per stage visit (using LAG to collapse consecutive events in same stage)
     const stageRes = await db.execute(sql`
-      WITH status_transitions AS (
+      WITH ev AS (
         SELECT
           e.incident_id,
           e.cycle,
           e.to_status AS stage,
-          e.time AS entered_at,
-          LEAD(e.time) OVER (
+          e.time,
+          LAG(e.to_status) OVER (
             PARTITION BY e.incident_id, e.cycle
             ORDER BY e.time ASC
-          ) AS exited_at
+          ) AS prev_stage
         FROM events e
         INNER JOIN incidents i ON e.incident_id = i.id
         WHERE e.to_status IS NOT NULL
           AND i.created_at >= ${fromIso}::timestamptz
           AND i.created_at <= ${toIso}::timestamptz
           ${siteClause}
+      ),
+      visits AS (
+        SELECT
+          stage,
+          time AS entered_at,
+          LEAD(time) OVER (
+            PARTITION BY incident_id, cycle
+            ORDER BY time ASC
+          ) AS exited_at
+        FROM ev
+        WHERE prev_stage IS DISTINCT FROM stage
       )
       SELECT
         stage,
         AVG(EXTRACT(EPOCH FROM (exited_at - entered_at)) / 3600.0)::float AS avg_hours
-      FROM status_transitions
+      FROM visits
       WHERE exited_at IS NOT NULL
         AND exited_at >= entered_at
         AND stage != 'CLOSED'

@@ -1,35 +1,43 @@
 import type { Status } from '@/lib/types';
 
 interface StatusPillProps {
-  status: Status | string;
+  status: Status;
 }
 
+const STATUS_LABELS: Record<Status, string> = {
+  SUBMITTED: 'Submitted',
+  SUPERVISOR_REVIEW: 'Supervisor review',
+  SPECIALTY_REVIEW: 'Specialty acknowledgement',
+  WITH_EA: 'With Executive Assistant',
+  CLOSED: 'Filed and closed',
+  REOPENED: 'Reopened',
+};
+
+const STATUS_STYLES: Record<Status, string> = {
+  SUBMITTED: 'bg-blue-50 text-blue-700 ring-blue-200',
+  SUPERVISOR_REVIEW: 'bg-amber-50 text-amber-800 ring-amber-200',
+  SPECIALTY_REVIEW: 'bg-blue-50 text-blue-800 ring-blue-200',
+  WITH_EA: 'bg-indigo-50 text-indigo-800 ring-indigo-200',
+  CLOSED: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
+  REOPENED: 'bg-red-50 text-red-700 ring-red-200',
+};
+
+const STATUS_DOTS: Record<Status, string> = {
+  SUBMITTED: 'bg-blue-600',
+  SUPERVISOR_REVIEW: 'bg-amber-500',
+  SPECIALTY_REVIEW: 'bg-blue-600',
+  WITH_EA: 'bg-indigo-600',
+  CLOSED: 'bg-emerald-600',
+  REOPENED: 'bg-red-600',
+};
+
 export function StatusPill({ status }: StatusPillProps) {
-  const map: Record<string, { label: string; className: string }> = {
-    SUBMITTED: { label: 'Submitted', className: 'bg-slate-100 text-slate-700' },
-    SUPERVISOR_REVIEW: {
-      label: 'Supervisor review',
-      className: 'bg-blue-50 text-blue-700',
-    },
-    SPECIALTY_REVIEW: {
-      label: 'Specialty review',
-      className: 'bg-amber-50 text-amber-700',
-    },
-    WITH_EA: { label: 'With EA', className: 'bg-violet-50 text-violet-700' },
-    CLOSED: { label: 'Closed', className: 'bg-emerald-50 text-emerald-700' },
-    REOPENED: { label: 'Reopened', className: 'bg-amber-50 text-amber-800' },
-  };
-
-  const config = map[status] ?? {
-    label: status,
-    className: 'bg-slate-100 text-slate-700',
-  };
-
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${config.className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-700 ring-slate-200'}`}
     >
-      {config.label}
+      <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOTS[status] ?? 'bg-slate-400'}`} />
+      {STATUS_LABELS[status] ?? status}
     </span>
   );
 }

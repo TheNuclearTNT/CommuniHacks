@@ -1,213 +1,285 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Badge, StatusPill, ToConfirmTag } from '@/components/ui';
-import { MOCK_ROLE_USERS } from '@/lib/mock/neel';
-import type { IncidentDetail, Role } from '@/lib/types';
+import { useState } from 'react';
+import { Card } from '@/components/ui/Card';
+import { StatusPill } from '@/components/ui/StatusPill';
+import { ToConfirmTag } from '@/components/ui/ToConfirmTag';
+import { getRoleLabel, getUserDisplayName } from '@/lib/question-labels';
+import type { IncidentDetail, Status } from '@/lib/types';
 
-const roleLabels: Record<Role, string> = {
-  STAFF: 'Staff',
-  SUPERVISOR: 'Supervisor',
-  PRIVACY_OFFICER: 'Privacy officer',
-  JOHSC_CHAIR: 'JOHSC chair',
-  IT_FACILITIES: 'IT / Facilities',
-  DIRECTOR_OPS: 'Director of operations',
-  CID_GROUP: 'CID group',
-  EXEC_ASSISTANT: 'Executive assistant',
-  EXECUTIVE: 'Executive',
+export interface PathwayTrackerProps {
+  detail: IncidentDetail;
+}
+
+const STAGES: { key: Status; label: string; shortDesc: string }[] = [
+  { key: 'SUBMITTED', label: 'Submitted', shortDesc: 'Staff intake logged' },
+  { key: 'SUPERVISOR_REVIEW', label: 'Supervisor review', shortDesc: 'Triage & routing' },
+  { key: 'SPECIALTY_REVIEW', label: 'Specialty acknowledgement', shortDesc: 'Parallel role sign-off' },
+  { key: 'WITH_EA', label: 'With Executive Assistant', shortDesc: 'Final receipt check' },
+  { key: 'CLOSED', label: 'Filed and closed', shortDesc: 'Complete & archived' },
+];
+
+const STAGE_ORDER: Record<Status, number> = {
+  SUBMITTED: 0,
+  REOPENED: 0,
+  SUPERVISOR_REVIEW: 1,
+  SPECIALTY_REVIEW: 2,
+  WITH_EA: 3,
+  CLOSED: 4,
 };
 
-function formatActor(id: string): string {
-  const byId = new Map(MOCK_ROLE_USERS.map((user) => [user.id, user.name]));
-  return byId.get(id) ?? id;
-}
-
 function formatDateTime(value?: string | null): string {
-  if (!value) return 'Not yet';
+  if (!value) return '—';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not yet';
-  return new Intl.DateTimeFormat('en-CA', {
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('en-CA', {
     dateStyle: 'medium',
     timeStyle: 'short',
-  }).format(date);
+  });
 }
 
-export function PathwayTracker({ detail }: { detail: IncidentDetail }) {
-  const [showTimeline, setShowTimeline] = useState(true);
+export function PathwayTracker({ detail }: PathwayTrackerProps) {
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const { incident, acknowledgements, events } = detail;
+  const currentIdx = STAGE_ORDER[incident.status] ?? 0;
+  const currentOwners = incident.currentOwnerRoles ?? [];
 
-  const cycleAcks = useMemo(
-    () => detail.acknowledgements.filter((ack) => ack.cycle === detail.incident.cycle),
-    [detail],
-  );
+  // Filter acknowledgements for current cycle (or all if none match)
+  const currentCycleAcks = acknowledgements.filter((a) => a.cycle === incident.cycle);
+  const displayAcks = currentCycleAcks.length > 0 ? currentCycleAcks : acknowledgements;
 
-  // The backend records the EA's receipt as an EA_RECEIVED event (not an acknowledgement row).
-  const receivedEvent = [...detail.events]
-    .reverse()
-    .find((event) => event.kind === 'EA_RECEIVED' && event.cycle === detail.incident.cycle);
-  const receivedBy = receivedEvent ? { ackedBy: receivedEvent.actorId, ackedAt: receivedEvent.time } : null;
-
-  const steps = [
-    { key: 'submitted', label: 'Submitted', done: true },
-    { key: 'review', label: 'Supervisor review', done: detail.incident.status !== 'SUBMITTED' },
-    {
-      key: 'specialty',
-      label: 'Specialty acknowledgement',
-      done: ['SPECIALTY_REVIEW', 'WITH_EA', 'CLOSED', 'REOPENED'].includes(detail.incident.status),
-    },
-    {
-      key: 'ea',
-      label: 'Executive Assistant',
-      done: ['WITH_EA', 'CLOSED', 'REOPENED'].includes(detail.incident.status),
-    },
-    { key: 'filed', label: 'Filed', done: ['CLOSED', 'REOPENED'].includes(detail.incident.status) },
-  ];
-
-  const statusText =
-    detail.incident.status === 'REOPENED'
-      ? `Reopened — cycle ${detail.incident.cycle}`
-      : detail.incident.status;
+  // Group events by cycle
+  const cycles = Array.from(new Set(events.map((e) => e.cycle))).sort((a, b) => b - a);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
+    <Card className="p-5">
+      {/* Header row */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Routing status</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-800">Now with:</span>
-            <span className="text-sm text-slate-700">
-              {detail.incident.currentOwnerRoles.length > 0
-                ? detail.incident.currentOwnerRoles.map((role) => roleLabels[role]).join(', ')
-                : detail.incident.status === 'CLOSED'
-                  ? 'Filed (no action needed)'
-                  : 'Unassigned'}
-            </span>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-slate-900">Pathway Tracker</h2>
+            {incident.cycle > 1 && (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                Cycle {incident.cycle} (Reopened on same ID)
+              </span>
+            )}
           </div>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Live stage progression, parallel specialty sign-offs, and immutable audit trail
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <StatusPill status={detail.incident.status} />
-          {detail.incident.cycle > 1 ? <Badge tone="amber">Reopened — cycle {detail.incident.cycle}</Badge> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {currentOwners.length > 0 && (
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+              Current owner:{' '}
+              <strong className="font-semibold text-slate-900">
+                {currentOwners.map(getRoleLabel).join(', ')}
+              </strong>
+            </span>
+          )}
+          <StatusPill status={incident.status} />
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-5">
-        {steps.map((step, index) => {
-          const tone = step.done
-            ? 'border-blue-600 bg-blue-600 text-white'
-            : 'border-slate-200 bg-white text-slate-500';
-          const connector = index < steps.length - 1 ? 'after:absolute after:-right-2 after:top-1/2 after:h-px after:w-4 after:-translate-y-1/2 after:bg-slate-200' : '';
-
+      {/* 5-Stage Visual Stepper */}
+      <div className="mt-5 grid gap-2.5 sm:grid-cols-5">
+        {STAGES.map((stage, idx) => {
+          const isCompleted = idx < currentIdx || incident.status === 'CLOSED';
+          const isActive = idx === currentIdx && incident.status !== 'CLOSED';
           return (
-            <div key={step.key} className={`relative ${connector}`}>
-              <div className={`flex items-center justify-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${tone}`}>
-                {step.label}
+            <div
+              key={stage.key}
+              className={`relative flex flex-col justify-between rounded-xl border p-3 transition ${
+                isActive
+                  ? 'border-blue-400 bg-blue-50/70 ring-2 ring-blue-500/20'
+                  : isCompleted
+                    ? 'border-emerald-200 bg-emerald-50/40'
+                    : 'border-slate-200 bg-slate-50/50 opacity-75'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                    isCompleted
+                      ? 'bg-emerald-600 text-white'
+                      : isActive
+                        ? 'bg-accent text-white'
+                        : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {isCompleted ? '✓' : idx + 1}
+                </span>
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider ${
+                    isCompleted
+                      ? 'text-emerald-700'
+                      : isActive
+                        ? 'text-accent'
+                        : 'text-slate-400'
+                  }`}
+                >
+                  {isCompleted ? 'Done' : isActive ? 'Current' : 'Pending'}
+                </span>
+              </div>
+              <div className="mt-2.5">
+                <p className="text-xs font-bold text-slate-900">{stage.label}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">{stage.shortDesc}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="mt-5 rounded-xl bg-slate-50 p-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-          <span className="font-semibold text-slate-800">Status:</span>
-          <span>{statusText}</span>
-        </div>
-
-        <div className="mt-3 space-y-2 text-sm text-slate-700">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-            <span>Specialty acknowledgements</span>
-            <span className="font-medium text-slate-900">
-              {cycleAcks.filter((ack) => ack.ackedAt).length}/{cycleAcks.length || 0}
-            </span>
+      {/* Specialty Acknowledgements Grid */}
+      <div className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
+        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-[0.08em] text-slate-600">
+              Stage 3 · Specialty Acknowledgements ({displayAcks.filter((a) => a.ackedAt).length}/
+              {displayAcks.length})
+            </h3>
+            <span className="text-[11px] text-slate-500">Parallel sign-off</span>
           </div>
 
-          {cycleAcks.length === 0 ? (
-            <div className="text-slate-500">No specialty acknowledgements required for this route.</div>
+          {displayAcks.length === 0 ? (
+            <p className="mt-2.5 text-xs text-slate-600">
+              No specialty acknowledgements required yet (determined upon Supervisor Review).
+            </p>
           ) : (
-            cycleAcks.map((ack) => (
-              <div key={ack.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-2 py-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-800">{roleLabels[ack.role]}</span>
-                    {ack.toConfirm ? <ToConfirmTag /> : null}
+            <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+              {displayAcks.map((ack) => {
+                const done = Boolean(ack.ackedAt);
+                return (
+                  <div
+                    key={ack.id}
+                    className={`rounded-xl border p-3 ${
+                      done
+                        ? 'border-emerald-200 bg-white'
+                        : 'border-amber-200 bg-amber-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-slate-900">
+                        {getRoleLabel(ack.role)}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {ack.toConfirm && <ToConfirmTag />}
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            done
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {done ? 'Signed off ✓' : 'Awaiting sign-off'}
+                        </span>
+                      </div>
+                    </div>
+                    {done ? (
+                      <div className="mt-1.5 text-xs text-slate-600">
+                        <p>
+                          By <strong className="font-medium text-slate-800">{getUserDisplayName(ack.ackedBy)}</strong> ·{' '}
+                          {formatDateTime(ack.ackedAt)}
+                        </p>
+                        {ack.comment && (
+                          <p className="mt-1 italic text-slate-700">&ldquo;{ack.comment}&rdquo;</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-1.5 text-xs text-amber-800">
+                        Waiting for {getRoleLabel(ack.role)} review and acknowledgement.
+                      </p>
+                    )}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {ack.ackedAt
-                      ? `Acknowledged by ${formatActor(ack.ackedBy ?? 'unknown')} on ${formatDateTime(ack.ackedAt)}`
-                      : 'Waiting'}
-                  </div>
-                </div>
-                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${ack.ackedAt ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                  {ack.ackedAt ? '✓ Done' : 'Waiting'}
-                </span>
-              </div>
-            ))
+                );
+              })}
+            </div>
           )}
         </div>
 
-        <div className="mt-4 border-t border-slate-200 pt-3 text-sm text-slate-700">
-          <div className="flex items-center justify-between gap-3">
-            <span>Executive Assistant</span>
-            <span>
-              {receivedBy
-                ? `Received by ${formatActor(receivedBy.ackedBy ?? 'EA')} • ${formatDateTime(receivedBy.ackedAt)}`
-                : 'Waiting for receipt'}
-            </span>
+        {/* Stage 4 & 5 EA Filing Summary */}
+        <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-[0.08em] text-slate-600">
+              Stage 4 &amp; 5 · EA Receipt
+            </h3>
+            {incident.status === 'CLOSED' ? (
+              <div className="mt-2.5 rounded-lg border border-emerald-200 bg-white p-3">
+                <p className="text-xs font-bold text-emerald-800">✓ Received &amp; Filed</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Closed at {formatDateTime(incident.closedAt)}
+                </p>
+              </div>
+            ) : incident.status === 'WITH_EA' ? (
+              <div className="mt-2.5 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+                <p className="text-xs font-bold text-indigo-900">Ready for Executive Assistant</p>
+                <p className="mt-1 text-xs text-indigo-800">
+                  All specialty acknowledgements are complete. Waiting for final receipt &amp; filing.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2.5 text-xs text-slate-600">
+                Unlocks automatically once Supervisor Review and all required Specialty Acknowledgements are signed off.
+              </p>
+            )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAuditLog((v) => !v)}
+            className="mt-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            {showAuditLog ? 'Hide audit log ▲' : `Show audit log (${events.length} events) ▼`}
+          </button>
         </div>
       </div>
 
-      <div className="mt-5">
-        <button
-          type="button"
-          onClick={() => setShowTimeline((value) => !value)}
-          className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700"
-        >
-          {showTimeline ? 'Hide' : 'Show'} timeline
-        </button>
-
-        {showTimeline ? (
-          <div className="mt-4 space-y-3">
-            {Object.entries(
-              detail.events.reduce<Record<number, typeof detail.events>>((acc, event) => {
-                const cycle = event.cycle;
-                acc[cycle] = [...(acc[cycle] ?? []), event];
-                return acc;
-              }, {}),
-            ).map(([cycle, events]) => (
-              <div key={cycle} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-slate-800">Cycle {cycle}</p>
-                  {Number(cycle) > 1 ? <Badge tone="amber">Reopened</Badge> : null}
+      {/* Collapsible Cycle-Grouped Audit Log */}
+      {showAuditLog && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-600">
+            Immutable Pathway Audit Log
+          </h3>
+          <div className="space-y-4">
+            {cycles.map((cycleNum) => {
+              const cycleEvents = events.filter((e) => e.cycle === cycleNum);
+              return (
+                <div key={cycleNum}>
+                  {cycles.length > 1 && (
+                    <p className="mb-2 text-xs font-bold text-slate-700">
+                      Cycle {cycleNum} {cycleNum > 1 ? '(Reopened)' : '(Initial)'}
+                    </p>
+                  )}
+                  <ol className="space-y-2 border-l-2 border-slate-200 pl-3">
+                    {cycleEvents.map((ev, index) => (
+                      <li key={`${ev.time}-${ev.kind}-${index}`} className="text-xs text-slate-700">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-900">
+                            {ev.kind.replace(/_/g, ' ')}
+                            {ev.toStatus ? ` → ${ev.toStatus}` : ''}
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-500">
+                            {formatDateTime(ev.time)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          {getUserDisplayName(ev.actorId)}
+                          {ev.payload && typeof ev.payload.reason === 'string'
+                            ? ` — "${ev.payload.reason}"`
+                            : ev.payload && typeof ev.payload.comment === 'string'
+                              ? ` — "${ev.payload.comment}"`
+                              : ''}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
                 </div>
-                <div className="space-y-2">
-                  {events.map((event, index) => (
-                    <div key={`${event.time}-${index}`} className="flex gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <span className="mt-0.5 text-xs font-medium text-slate-500">
-                        {formatDateTime(event.time)}
-                      </span>
-                      <div className="flex-1 text-sm text-slate-700">
-                        <span className="font-medium text-slate-900">{formatActor(event.actorId)}</span>{' '}
-                        {event.kind === 'SUBMITTED' && 'submitted the incident'}
-                        {event.kind === 'OPENED' && 'opened the record for review'}
-                        {event.kind === 'REVIEW_SUBMITTED' && 'submitted the supervisor review'}
-                        {event.kind === 'ROUTED' && 'routed the incident'}
-                        {event.kind === 'ACKNOWLEDGED' && 'acknowledged the incident'}
-                        {event.kind === 'EA_RECEIVED' && 'received the filed record'}
-                        {event.kind === 'CLOSED' && 'filed the record'}
-                        {event.kind === 'REOPENED' && 'reopened the record for follow-up'}
-                        {event.kind === 'NOTE' && 'added follow-up information'}
-                        {event.kind === 'ACTION_UPDATED' && 'updated a follow-up action'}
-                        {event.kind === 'CLOCK_MET' && 'closed a compliance clock'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        ) : null}
-      </div>
-    </div>
+        </div>
+      )}
+    </Card>
   );
 }

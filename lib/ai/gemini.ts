@@ -336,7 +336,18 @@ export interface ExecutiveAggregatesPayload {
   overdueClockIds?: string[];
   reopenedIds?: string[];
   allowedIncidentIds: string[];
+  ruleBullets?: { text: string; incidentIds: string[] }[];
+  ruleFocus?: string;
 }
+
+const HUMAN_TYPE_LABEL: Record<string, string> = {
+  PRIVACY: 'Privacy',
+  STAFF_INJURY: 'Staff injury',
+  FACILITIES: 'Facilities',
+  IT_CYBER: 'IT / Cyber',
+  BEHAVIOURAL: 'Behavioural',
+  CID: 'Critical incident debrief',
+};
 
 /**
  * Data-driven deterministic insights computation over the database aggregates (used in mock mode and as no-AI fallback).
@@ -353,11 +364,24 @@ export function computeDeterministicInsights(
     };
   }
 
+  if (payload.ruleBullets && payload.ruleBullets.length >= 3) {
+    return {
+      bullets: payload.ruleBullets.slice(0, 5),
+      focus:
+        payload.ruleFocus ||
+        'Follow up specialty acknowledgements that have waited more than 3 days.',
+      generatedAt: new Date().toISOString(),
+      mock: mockFlag,
+    };
+  }
+
   const sortedSites = [...payload.bySite].sort((a, b) => b.count - a.count);
   const sortedTypes = [...payload.byType].sort((a, b) => b.count - a.count);
-  const bullets: { text: string; incidentIds: string[] }[] = [];
+  const bullets: { text: string; incidentIds: string[] }[] = [
+    ...(payload.ruleBullets ?? []),
+  ];
 
-  if (sortedSites.length > 0) {
+  if (sortedSites.length > 0 && bullets.length < 5) {
     const topSite = sortedSites[0];
     bullets.push({
       text: `${topSite.site} accounts for the highest volume of reported incidents (${topSite.count} of ${payload.allowedIncidentIds.length} records in the selected window).`,
@@ -365,33 +389,35 @@ export function computeDeterministicInsights(
     });
   }
 
-  if (sortedTypes.length > 0) {
+  if (sortedTypes.length > 0 && bullets.length < 5) {
     const topType = sortedTypes[0];
+    const label = HUMAN_TYPE_LABEL[topType.type] ?? topType.type.replace('_', ' ');
     bullets.push({
-      text: `${topType.type.replace('_', ' ')} is the most frequent incident category (${topType.count} reports), requiring targeted preventive follow-up.`,
+      text: `${label} is the most frequent incident category (${topType.count} reports), requiring targeted preventive follow-up.`,
       incidentIds: topType.sampleIncidentIds.slice(0, 4),
     });
   }
 
-  if (sortedTypes.length > 1) {
+  if (sortedTypes.length > 1 && bullets.length < 5) {
     const secondType = sortedTypes[1];
+    const label = HUMAN_TYPE_LABEL[secondType.type] ?? secondType.type.replace('_', ' ');
     bullets.push({
-      text: `${secondType.type.replace('_', ' ')} represents the second largest routing pathway (${secondType.count} reports) across Langs sites.`,
+      text: `${label} represents the second largest routing pathway (${secondType.count} reports) across Langs sites.`,
       incidentIds: secondType.sampleIncidentIds.slice(0, 4),
     });
   }
 
-  if (payload.overdueClockIds && payload.overdueClockIds.length > 0) {
+  if (payload.overdueClockIds && payload.overdueClockIds.length > 0 && bullets.length < 5) {
     bullets.push({
-      text: `${payload.overdueClockIds.length} compliance clock(s) are currently overdue or approaching statutory reporting deadlines (WSIB / JHSC / MOL).`,
+      text: `${payload.overdueClockIds.length} records have an overdue reporting clock.`,
       incidentIds: payload.overdueClockIds.slice(0, 4),
     });
-  } else if (payload.awaitingAckIds && payload.awaitingAckIds.length > 0) {
+  } else if (payload.awaitingAckIds && payload.awaitingAckIds.length > 0 && bullets.length < 5) {
     bullets.push({
-      text: `${payload.awaitingAckIds.length} incident(s) are currently in Specialty Acknowledgement awaiting sign-off before Executive Assistant filing.`,
+      text: `${payload.awaitingAckIds.length} incident(s) are currently in specialty acknowledgement awaiting sign-off before Executive Assistant filing.`,
       incidentIds: payload.awaitingAckIds.slice(0, 4),
     });
-  } else if (payload.reopenedIds && payload.reopenedIds.length > 0) {
+  } else if (payload.reopenedIds && payload.reopenedIds.length > 0 && bullets.length < 5) {
     bullets.push({
       text: `${payload.reopenedIds.length} closed record(s) were reopened for additional follow-up on the same incident ID without creating duplicate records.`,
       incidentIds: payload.reopenedIds.slice(0, 4),
@@ -401,17 +427,20 @@ export function computeDeterministicInsights(
   // Ensure at least 3 bullets
   while (bullets.length < 3) {
     bullets.push({
-      text: 'All submitted incidents in the window were routed through Supervisor Review with full audit logging.',
+      text: 'All submitted incidents in the window were routed through supervisor review with full audit logging.',
       incidentIds: payload.allowedIncidentIds.slice(0, 3),
     });
   }
 
   const topSiteName = sortedSites[0]?.site ?? 'Main Site';
-  const topTypeName = sortedTypes[0]?.type.replace('_', ' ') ?? 'FACILITIES';
+  const topTypeRaw = sortedTypes[0]?.type ?? 'FACILITIES';
+  const topTypeName = HUMAN_TYPE_LABEL[topTypeRaw]?.toLowerCase() ?? topTypeRaw.toLowerCase();
 
   return {
     bullets: bullets.slice(0, 5),
-    focus: `Prioritize preventive controls and timely specialty acknowledgements for ${topTypeName} incidents at ${topSiteName}.`,
+    focus:
+      payload.ruleFocus ||
+      `Prioritize preventive controls and timely specialty acknowledgements for ${topTypeName} incidents at ${topSiteName}.`,
     generatedAt: new Date().toISOString(),
     mock: mockFlag,
   };
