@@ -8,6 +8,7 @@ import { getMe, transcribeIntake } from "@/lib/api-client";
 import { BackLink } from "@/components/form/BackLink";
 import { QUESTION_BY_ID } from "@/components/form/questions";
 import { DEMO_STORIES } from "@/lib/ai/demo-fixtures";
+import { ontarioToday, parseDatePhrase, parseTimePhrase } from "@/lib/ai/parse-when";
 
 // A line in the conversation shown on screen.
 interface Turn {
@@ -106,6 +107,13 @@ export default function DescribePage() {
   // The free-text question the assistant just asked: a typed reply answers it
   // directly (short replies like "Not applicable" are too thin for the AI).
   const [askingText, setAskingText] = useState<string | null>(null);
+  // A date or time question: typed phrases are parsed, and pickers are shown.
+  const [askingWhen, setAskingWhen] = useState<{ id: string; type: "date" | "time" } | null>(null);
+  const [whenValue, setWhenValue] = useState("");
+  // Loop guard: the question asked last, the one that can be skipped, and skips so far.
+  const [lastAsked, setLastAsked] = useState<string | null>(null);
+  const [canSkip, setCanSkip] = useState<string | null>(null);
+  const [skipIds, setSkipIds] = useState<string[]>([]);
 
   const chooseCategory = (c: (typeof CATEGORIES)[number]) => {
     setCategory(c);
@@ -191,14 +199,30 @@ export default function DescribePage() {
   // Send the reporter's reply into the conversation and act on the AI's turn.
   // `picked` is set when the reporter taps one of the answer chips: that answer
   // goes straight into the form instead of relying on the AI to map the words.
-  const submitReply = async (reply: string, pickedChip?: { id: string; value: string }) => {
+  const submitReply = async (
+    reply: string,
+    pickedChip?: { id: string; value: string },
+    extraSkip?: string,
+  ) => {
     const clean = reply.trim();
     if (!clean) {
       setBusy(false);
       return;
     }
-    const picked = pickedChip ?? (askingText ? { id: askingText, value: clean } : undefined);
+    // A typed date/time ("10th sept", "last night", "10 pm") is read here, without AI.
+    const parsedWhen =
+      askingWhen?.type === "date"
+        ? parseDatePhrase(clean)
+        : askingWhen?.type === "time"
+          ? parseTimePhrase(clean)
+          : null;
+    const picked =
+      pickedChip ??
+      (askingText ? { id: askingText, value: clean } : undefined) ??
+      (askingWhen && parsedWhen ? { id: askingWhen.id, value: parsedWhen } : undefined);
     setAskingText(null);
+    setAskingWhen(null);
+    setCanSkip(null);
     setConversation((c) => [...c, { who: "you", text: clean }]);
     const nextTranscript = (fullTranscript + " " + clean).trim();
     setFullTranscript(nextTranscript);
@@ -207,13 +231,20 @@ export default function DescribePage() {
     setBusy(true);
     setError(null);
     if (picked) setAnswer(picked.id, picked.value);
+    if (extraSkip) setSkipIds((ids) => [...ids, extraSkip]);
+    setWhenValue("");
     const sentAnswers = picked ? { ...answers, [picked.id]: picked.value } : answers;
 
     try {
       const res = await fetch("/api/intake/converse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: nextTranscript, answers: sentAnswers, skipExtraction: Boolean(picked) }),
+        body: JSON.stringify({
+          transcript: nextTranscript,
+          answers: sentAnswers,
+          skipExtraction: Boolean(picked) || Boolean(extraSkip),
+          skipIds: extraSkip ? [...skipIds, extraSkip] : skipIds,
+        }),
       });
       if (!res.ok) throw new Error(String(res.status));
       const data: ConverseResponse = await res.json();
@@ -233,10 +264,19 @@ export default function DescribePage() {
         pushAi(data.next.question);
       } else {
         setAskCount((n) => n + 1);
-        pushAi(data.next.question);
         const q = QUESTION_BY_ID[data.next.questionId];
+        // Same question again → the last reply didn't answer it. Say so and
+        // offer a way past it instead of repeating forever.
+        if (data.next.questionId === lastAsked) {
+          pushAi("Sorry, I didn't catch that. You can pick an answer below, or skip it and fill it in on the review page.");
+          setCanSkip(data.next.questionId);
+        } else {
+          pushAi(data.next.question);
+        }
+        setLastAsked(data.next.questionId);
         if (q?.type === "single" && q.options) setOptionsFor({ id: q.id, options: q.options });
         else if (q && (q.type === "short" || q.type === "long")) setAskingText(q.id);
+        else if (q && (q.type === "date" || q.type === "time")) setAskingWhen({ id: q.id, type: q.type });
       }
     } catch {
       setError("The assistant is unavailable. You can fill the form instead.");
@@ -302,6 +342,58 @@ export default function DescribePage() {
               {option}
             </button>
           ))}
+        </div>
+      )}
+
+      {askingWhen && !busy && !finished && (
+        <div className="mb-6 flex flex-wrap items-center gap-2" role="group" aria-label="Choose a date or time">
+          {askingWhen.type === "date" &&
+            (["Today", "Yesterday"] as const).map((label, back) => {
+              const d = ontarioToday();
+              d.setDate(d.getDate() - back);
+              const value = d.toLocaleDateString("en-CA");
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => void submitReply(label, { id: askingWhen.id, value })}
+                  className="tap-target rounded-full border border-accent bg-white px-4 py-2 text-sm font-medium text-accent hover:bg-blue-50"
+                >
+                  {label}
+                </button>
+              );
+            })}
+          <input
+            type={askingWhen.type}
+            value={whenValue}
+            max={askingWhen.type === "date" ? ontarioToday().toLocaleDateString("en-CA") : undefined}
+            onChange={(e) => setWhenValue(e.target.value)}
+            aria-label={askingWhen.type === "date" ? "Pick the date" : "Pick the time"}
+            className="tap-target rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            disabled={!whenValue}
+            onClick={() => {
+              const value = askingWhen.type === "time" ? parseTimePhrase(whenValue) ?? whenValue : whenValue;
+              void submitReply(value, { id: askingWhen.id, value });
+            }}
+            className="tap-target rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            Use this {askingWhen.type}
+          </button>
+        </div>
+      )}
+
+      {canSkip && !busy && !finished && (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => void submitReply("Skip — I'll fill this in on the review page.", undefined, canSkip)}
+            className="tap-target rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            Skip, I&apos;ll fill it in later
+          </button>
         </div>
       )}
 

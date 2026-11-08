@@ -4,6 +4,7 @@ import type {
   IncidentListItem,
   IntakeExtractResponse,
 } from "@/lib/types";
+import { parseDatePhrase, parseTimePhrase } from "@/lib/ai/parse-when";
 
 // Fictional supervisor list (A8), used for q35 + the "done" screen.
 export const SUPERVISORS: { id: string; name: string }[] = [
@@ -165,13 +166,11 @@ export function mockExtract(
   // Interventions
   if (has("first aid", "ice", "ice pack")) setIfEmpty("q31", ["First Aid"]);
 
-  // Time: "2:15 today" -> 2:15PM
-  if (t.includes("2:15") || t.includes("2 15")) setIfEmpty("q2", "2:15PM");
-
-  // Date: "today" / "this morning"
-  if (has("today", "this morning", "this afternoon")) {
-    setIfEmpty("q1", new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" }));
-  }
+  // Date and time: "last night", "10th sept", "about 2:15 today", "10 pm"…
+  const when = parseDatePhrase(transcript);
+  if (when) setIfEmpty("q1", when);
+  const at = parseTimePhrase(transcript) ?? (t.includes("2 15") ? "2:15PM" : null);
+  if (at) setIfEmpty("q2", at);
 
   // Narrative (q32): the reporter's own words, not a canned story.
   const story = transcript.replace(/^Type of incident \(chosen by reporter\):[^.]*\.\s*/, "").trim();

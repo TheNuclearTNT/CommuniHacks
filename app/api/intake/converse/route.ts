@@ -7,7 +7,7 @@ import { converseIntake } from "@/lib/ai/intake";
 // Returns: ConverseResponse — merged answers, relevant branches, and the next
 // step (ask one relevant question / need more detail / done).
 export async function POST(request: Request) {
-  let body: { transcript?: unknown; answers?: unknown; skipExtraction?: unknown };
+  let body: { transcript?: unknown; answers?: unknown; skipExtraction?: unknown; skipIds?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     transcript: body.transcript,
     answers,
     skipExtraction: body.skipExtraction === true,
+    skipIds: Array.isArray(body.skipIds) ? body.skipIds.filter((x): x is string => typeof x === "string") : [],
   });
   return NextResponse.json(result);
 }

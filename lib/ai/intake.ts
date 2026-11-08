@@ -14,6 +14,7 @@ import { QUESTIONS, QUESTION_BY_ID } from "@/components/form/questions";
 import { missingRequired } from "@/components/form/logic";
 import { mockExtract, mockFollowUpText } from "@/lib/mock/mathew";
 import { matchDemoStory } from "@/lib/ai/demo-fixtures";
+import { parseDatePhrase, parseTimePhrase } from "@/lib/ai/parse-when";
 import {
   deriveBranches,
   relevantMissingRequired,
@@ -221,6 +222,8 @@ export interface ConverseRequest {
   // True when the latest reply already went straight into `answers` (a tapped
   // option or a reply to a free-text question): nothing new for the AI to read.
   skipExtraction?: boolean;
+  // Questions the reporter tapped "Skip" on; they fill them in on review.
+  skipIds?: string[];
 }
 
 export interface ConverseResponse {
@@ -292,6 +295,16 @@ export async function converseIntake(
   }
 
   const answers = mergeAnswers(req.answers, extracted);
+  // Safety net: plain date/time phrases ("last night", "10th sept", "10 pm")
+  // never depend on the AI, so the date question can't loop.
+  if (isEmptyVal(answers.q1)) {
+    const when = parseDatePhrase(req.transcript);
+    if (when) answers.q1 = when;
+  }
+  if (isEmptyVal(answers.q2)) {
+    const at = parseTimePhrase(req.transcript);
+    if (at) answers.q2 = at;
+  }
 
   // 2. Too thin to tell what happened? Ask for more before anything else.
   if (storyTooThin(req.transcript, answers)) {
@@ -312,7 +325,9 @@ export async function converseIntake(
   const branches = deriveBranches(answers);
 
   // 4. Which relevant required questions are still empty?
-  const missing = relevantMissingRequired(answers, branches);
+  // Questions the reporter chose to skip are left for the review page.
+  const skipped = new Set(req.skipIds ?? []);
+  const missing = relevantMissingRequired(answers, branches).filter((id) => !skipped.has(id));
 
   if (missing.length === 0) {
     return {
