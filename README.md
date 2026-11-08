@@ -1,4 +1,4 @@
-# Langs SafeReport
+# LangsLine
 
 An incident reporting tool built for Langs Community Health Centre at CommuniHacks.
 
@@ -10,7 +10,7 @@ The reason is the form. Langs' existing report has 35 questions. On a busy shift
 
 But a shorter form is not the answer either. Supervisors need the detail to review an incident, route it to the right person, and track it to closure. The real challenge is the balance: a report that is quick enough to actually finish, but complete enough to be useful.
 
-## What we solve
+## Solution
 
 SafeReport keeps the full 35-question form but changes how it gets filled in.
 
@@ -18,7 +18,7 @@ Instead of facing 35 fields, a staff member just says what happened. The app lis
 
 On the other side, supervisors and executives get a clear view: every report, where each one sits in the review pathway, a 24-hour clock on supervisor reviews, and trends across incident types, sites and time.
 
-## Who uses it
+## Users
 
 The app has two sides, chosen from the home page.
 
