@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, EmptyState, StatusPill, TypeChip } from '@/components/ui';
 import { PathwayTracker } from '@/components/tracker/PathwayTracker';
-import { getIncident, getMe } from '@/lib/api-client';
+import { ackIncident, getIncident, getMe, receiveIncident, reopenIncident } from '@/lib/api-client';
 import { getNeelMockIncident } from '@/lib/mock/neel';
 import type { IncidentDetail, Role } from '@/lib/types';
 
@@ -20,6 +20,24 @@ export default function RecordDetailPage() {
   const id = params.id;
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
   const [role, setRole] = useState<Role>('SUPERVISOR');
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reopening, setReopening] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
+
+  async function runAction(action: () => Promise<IncidentDetail>) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      setDetail(await action());
+      setReopening(false);
+      setReopenReason('');
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -73,28 +91,89 @@ export default function RecordDetailPage() {
     );
   }
 
-  const canAcknowledge = detail.acknowledgements.some((ack) => ack.role === role && !ack.ackedAt);
+  const myAck = detail.acknowledgements.find(
+    (ack) => ack.role === role && ack.cycle === detail.incident.cycle && !ack.ackedAt,
+  );
+  const canAcknowledge = detail.incident.status === 'SPECIALTY_REVIEW' && Boolean(myAck);
   const canOpen = role === 'SUPERVISOR' && ['SUBMITTED', 'REOPENED'].includes(detail.incident.status);
   const canReceive = role === 'EXEC_ASSISTANT' && detail.incident.status === 'WITH_EA';
   const canReopen = (role === 'SUPERVISOR' || role === 'EXEC_ASSISTANT') && detail.incident.status === 'CLOSED';
+  const queueHref =
+    role === 'EXEC_ASSISTANT' ? '/ea' : role === 'SUPERVISOR' ? '/supervisor' : role === 'EXECUTIVE' ? '/dashboard' : '/inbox';
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <div className="sticky top-0 z-10 mb-6 border-b border-slate-200 bg-white/80 py-3 backdrop-blur-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/supervisor" className="text-sm font-medium text-blue-700 underline-offset-2 hover:underline">
+            <Link href={queueHref} className="text-sm font-medium text-blue-700 underline-offset-2 hover:underline">
               Back to queue
             </Link>
             <span className="text-sm text-slate-500">{detail.incident.id}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {canOpen ? <Button>Open / review</Button> : null}
-            {canAcknowledge ? <Button variant="secondary">Acknowledge</Button> : null}
-            {canReceive ? <Button>Confirm receipt and file</Button> : null}
-            {canReopen ? <Button variant="secondary">Reopen</Button> : null}
+            {canOpen ? (
+              <Link
+                href={`/supervisor/review/${encodeURIComponent(detail.incident.id)}`}
+                className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+              >
+                Open / review
+              </Link>
+            ) : null}
+            {canAcknowledge && myAck ? (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => runAction(() => ackIncident(detail.incident.id, { ackId: myAck.id }))}
+              >
+                {busy ? 'Acknowledging…' : 'Acknowledge'}
+              </Button>
+            ) : null}
+            {canReceive ? (
+              <Button disabled={busy} onClick={() => runAction(() => receiveIncident(detail.incident.id))}>
+                {busy ? 'Filing…' : 'Confirm receipt and file'}
+              </Button>
+            ) : null}
+            {canReopen && !reopening ? (
+              <Button variant="secondary" disabled={busy} onClick={() => setReopening(true)}>
+                Reopen
+              </Button>
+            ) : null}
           </div>
         </div>
+        {canReopen && reopening ? (
+          <form
+            className="mt-3 flex flex-col gap-2 md:flex-row md:items-end"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (reopenReason.trim()) runAction(() => reopenIncident(detail.incident.id, { reason: reopenReason.trim() }));
+            }}
+          >
+            <label className="flex-1 text-sm font-medium text-slate-700">
+              Reason for reopening
+              <input
+                value={reopenReason}
+                onChange={(event) => setReopenReason(event.target.value)}
+                required
+                placeholder="e.g. Follow-up needed: storage still unsafe"
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal"
+              />
+            </label>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={busy || !reopenReason.trim()}>
+                {busy ? 'Reopening…' : 'Reopen record'}
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setReopening(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : null}
+        {actionError ? (
+          <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {actionError}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-6">
