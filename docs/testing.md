@@ -10,6 +10,7 @@ Success check (what judges look for), applied to every row:
 | Date | Commit | Level | Result |
 |---|---|---|---|
 | 7 Nov 2026 | `e37acc8` (main) | **API** — `npx tsx scripts/scenarios.ts` against `next start` on local PGlite, mock AI | **All 7 pass** (35 checks). UI run waits for Neel's review screens. |
+| 7 Nov 2026 | `44438d1` (main, with Neel's screens) | **UI**: Scenario 1 by hand on local PGlite | **Blocked at acknowledgement.** Riley's typed report got wrong answers from the mock intake (`docs/requests/mathew.md` #4), so it was submitted via the API instead. Jordan: queue ✓, review screen ✓, AI summary ✓, V1 route preview changes live ✓, submit ✓. Sam: record page shows owner, stage and acks ✓, but **Acknowledge does nothing** (`docs/requests/neel.md` #6). |
 
 API run covers: route per type, owner/stage after each step, ack rows and who acked, EA blocked before acks (409), wrong role blocked (403), EA receipt event, `closedAt`, reopen keeps the ref # with cycle 2 and full history, EA queue only after both acks.
 
@@ -56,3 +57,5 @@ File each in `docs/requests/<owner>.md` and tell the team. Log here: date · sce
 |---|---|---|---|---|
 | 7 Nov | Phone width | Mathew | `/report` heading unreadable when the device is in dark mode (black page, navy heading) | Filed |
 | 7 Nov | Phone width | Mathew | "My reports" link is an 18px tap target (brief: large tap targets on staff screens) | Filed |
+| 7 Nov | 1 (UI) | Neel | **Record page Open/Acknowledge/Receive/Reopen buttons have no click handler, so nobody can acknowledge in the UI** | Filed; blocks demo |
+| 7 Nov | 1 (UI) | Mathew | Mock intake fills injury/first aid and a canned story for a privacy report | Filed |
