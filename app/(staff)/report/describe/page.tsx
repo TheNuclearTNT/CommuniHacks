@@ -7,6 +7,7 @@ import { useReportDraft } from "@/components/form/useReportDraft";
 import { getMe, transcribeIntake } from "@/lib/api-client";
 import { BackLink } from "@/components/form/BackLink";
 import { QUESTION_BY_ID } from "@/components/form/questions";
+import { DEMO_STORIES } from "@/lib/ai/demo-fixtures";
 
 // A line in the conversation shown on screen.
 interface Turn {
@@ -68,21 +69,9 @@ const CATEGORIES = [
   },
 ] as const;
 
-// Quick-fill example stories for demos (from the team's earlier version).
-const DEMO_SCENARIOS = [
-  {
-    label: "Privacy · Misdirected email",
-    text: "This morning around 9:15 AM at Main Site, a staff member accidentally replied-all to an external community partner email thread that had a client schedule spreadsheet attached. We immediately recalled the message, notified our supervisor, and asked the recipient to delete the attachment.",
-  },
-  {
-    label: "Staff Injury · Wet stairwell fall",
-    text: "At 2:30 PM today at Grow Community Centre, a youth worker slipped on melted snow near the east stairwell landing and twisted their right ankle. A first aid ice pack was applied on site and they went to a walk-in clinic for an X-ray. A wet floor cone was placed immediately.",
-  },
-  {
-    label: "Behavioural · Lobby escalation",
-    text: "Around 3:45 PM on Friday at Main Site reception, a visitor became verbally agitated at the front desk, shouted at two reception staff members, and knocked over a brochure stand before leaving.",
-  },
-];
+// Quick-fill example stories for demos. Their answers are pre-written
+// (lib/ai/demo-fixtures.ts), so trying them costs no Gemini quota.
+const DEMO_SCENARIOS = DEMO_STORIES.map((s) => ({ label: s.label, text: s.text }));
 
 // /report/describe — an AI-led conversation. The assistant asks (out loud via
 // ElevenLabs when a key is set, otherwise on screen), the reporter speaks or
@@ -224,7 +213,7 @@ export default function DescribePage() {
       const res = await fetch("/api/intake/converse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: nextTranscript, answers: sentAnswers }),
+        body: JSON.stringify({ transcript: nextTranscript, answers: sentAnswers, skipExtraction: Boolean(picked) }),
       });
       if (!res.ok) throw new Error(String(res.status));
       const data: ConverseResponse = await res.json();

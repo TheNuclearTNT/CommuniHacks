@@ -13,6 +13,7 @@ import type {
 import { QUESTIONS, QUESTION_BY_ID } from "@/components/form/questions";
 import { missingRequired } from "@/components/form/logic";
 import { mockExtract, mockFollowUpText } from "@/lib/mock/mathew";
+import { matchDemoStory } from "@/lib/ai/demo-fixtures";
 import {
   deriveBranches,
   relevantMissingRequired,
@@ -117,12 +118,16 @@ export async function extractIntake(
   let extracted: Answers;
   let mock = true;
 
-  if (useMock || !process.env.GEMINI_API_KEY) {
+  const demo = matchDemoStory(req.transcript);
+  if (demo) {
+    // Pre-written answers for the demo stories: no Gemini call.
+    extracted = demo.answers();
+  } else if (useMock || !process.env.GEMINI_API_KEY) {
     extracted = mockExtract(req.transcript, req.answers);
     mock = true;
   } else {
     try {
-      extracted = await callGemini(req);
+      extracted = await callGeminiCached(req);
       mock = false;
     } catch (err) {
       // Any AI failure falls back to deterministic rules — demo never breaks.
@@ -137,6 +142,18 @@ export async function extractIntake(
   const followUp = pickFollowUp(missing);
 
   return { answers, missingRequired: missing, followUp, mock };
+}
+
+// Same story → same answers: don't spend quota twice (per server instance).
+const extractCache = new Map<string, Answers>();
+async function callGeminiCached(req: IntakeExtractRequest): Promise<Answers> {
+  const key = req.transcript.trim().toLowerCase();
+  const hit = extractCache.get(key);
+  if (hit) return hit;
+  const out = await callGemini(req);
+  if (extractCache.size > 200) extractCache.clear();
+  extractCache.set(key, out);
+  return out;
 }
 
 /** Real Gemini call. Structured JSON output constrained by the form schema. */
@@ -201,6 +218,9 @@ export interface ConverseRequest {
   transcript: string;
   // Answers gathered so far.
   answers: Answers;
+  // True when the latest reply already went straight into `answers` (a tapped
+  // option or a reply to a free-text question): nothing new for the AI to read.
+  skipExtraction?: boolean;
 }
 
 export interface ConverseResponse {
@@ -247,12 +267,19 @@ export async function converseIntake(
   // 1. Extract answers from the full story so far.
   let extracted: Answers;
   let mock = true;
-  if (useMock || !process.env.GEMINI_API_KEY) {
+  const demo = matchDemoStory(req.transcript);
+  if (req.skipExtraction) {
+    // Saves a Gemini call per question: the answer is already in place.
+    extracted = {};
+  } else if (demo) {
+    // Pre-written answers for the demo stories: no Gemini call.
+    extracted = demo.answers();
+  } else if (useMock || !process.env.GEMINI_API_KEY) {
     extracted = mockExtract(req.transcript, req.answers);
     mock = true;
   } else {
     try {
-      extracted = await callGemini({
+      extracted = await callGeminiCached({
         transcript: req.transcript,
         answers: req.answers,
       });
