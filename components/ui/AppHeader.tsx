@@ -91,7 +91,7 @@ export function AppHeader() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
           <Link href="/" className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">L</div>
-            <span className="text-sm font-bold tracking-tight text-slate-900">Langs SafeReport</span>
+            <span className="text-sm font-bold tracking-tight text-slate-900">Langs Line</span>
           </Link>
           <Link href="/" className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900">
             ← Home
@@ -112,7 +112,7 @@ export function AppHeader() {
             </div>
             <div className="leading-tight">
               <span className="block text-sm font-bold tracking-tight text-slate-900">
-                Langs SafeReport
+                Langs Line
               </span>
               <span className="block text-[11px] font-medium text-slate-500">
                 Incident &amp; Pathway Console

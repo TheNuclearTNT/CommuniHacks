@@ -208,7 +208,7 @@ export function buildMockAiAnalysis(
     const desc =
       typeof answers.q32 === 'string' && answers.q32.trim()
         ? answers.q32.trim()
-        : 'Workplace incident reported via Langs SafeReport intake.';
+        : 'Workplace incident reported via Langs Line intake.';
     const location =
       typeof answers.q5 === 'string' && answers.q5.trim()
         ? answers.q5.trim()
