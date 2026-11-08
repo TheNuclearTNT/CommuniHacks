@@ -52,7 +52,7 @@ export default function ExtrasPage() {
               type="checkbox"
               checked={footageHoldRequested}
               onChange={(e) => setFootageHold(e.target.checked)}
-              className="h-6 w-6 shrink-0 rounded accent-[#1d4ed8]"
+              className="h-6 w-6 shrink-0 rounded accent-accent"
             />
           </label>
         </div>

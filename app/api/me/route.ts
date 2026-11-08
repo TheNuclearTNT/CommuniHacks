@@ -49,7 +49,8 @@ export async function POST(req: Request) {
     const cookieStore = await cookies();
     cookieStore.set('userId', user.id, { path: '/', httpOnly: false });
     cookieStore.set('role', user.role, { path: '/', httpOnly: false });
-    cookieStore.set('portal', '1', { path: '/', httpOnly: false });
+    // NOTE: this no longer sets the old `portal` flag. Picking a persona must not
+    // open the supervisor / executive side; only /api/portal-login does that.
 
     return NextResponse.json(user);
   } catch (err) {

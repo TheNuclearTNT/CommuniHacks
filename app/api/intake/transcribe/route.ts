@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
+import { elevenLabsKey, voiceIsMocked } from "@/lib/ai/voice";
 import { SCENARIO_3_TRANSCRIPT } from "@/lib/mock/mathew";
 
 // POST /api/intake/transcribe  (Mathew owns this route)
 // Receives audio (multipart form field "audio"); returns { transcript }.
-// Real path -> ElevenLabs speech-to-text. Mock path -> canned Scenario 3.
+// Real path -> ElevenLabs speech-to-text. When voice is off (no ElevenLabs key,
+// or USE_MOCK_VOICE=true) it returns the canned Scenario 3 story for demos.
+//
+// If real transcription FAILS it returns an error. It never falls back to the
+// canned story, because that would put an invented incident into a real report.
 export async function POST(request: Request) {
-  const useMock = (process.env.USE_MOCK_AI ?? "true").toLowerCase() === "true";
-
-  if (useMock || !process.env.ELEVENLABS_API_KEY) {
+  const apiKey = elevenLabsKey();
+  if (voiceIsMocked() || !apiKey) {
     return NextResponse.json({ transcript: SCENARIO_3_TRANSCRIPT });
   }
 
@@ -19,28 +23,29 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       { error: "Expected multipart form with an 'audio' file" },
-      { status: 400 }
+      { status: 400 },
     );
   }
-  if (!audio) {
+  if (!audio || audio.size === 0) {
     return NextResponse.json(
-      { error: "Missing 'audio' file", fields: ["audio"] },
-      { status: 400 }
+      { error: "Missing or empty 'audio' file", fields: ["audio"] },
+      { status: 400 },
     );
   }
 
   try {
-    const transcript = await transcribeWithElevenLabs(audio);
+    const transcript = await transcribeWithElevenLabs(audio, apiKey);
     return NextResponse.json({ transcript });
   } catch (err) {
-    console.error("ElevenLabs transcribe failed, using mock:", err);
-    // Never break the demo — fall back to the canned transcript.
-    return NextResponse.json({ transcript: SCENARIO_3_TRANSCRIPT });
+    console.error("ElevenLabs transcribe failed:", err);
+    return NextResponse.json(
+      { error: "Could not transcribe the recording" },
+      { status: 502 },
+    );
   }
 }
 
-async function transcribeWithElevenLabs(audio: File): Promise<string> {
-  const apiKey = process.env.ELEVENLABS_API_KEY as string;
+async function transcribeWithElevenLabs(audio: File, apiKey: string): Promise<string> {
   const fd = new FormData();
   fd.append("file", audio, audio.name || "recording.webm");
   // ElevenLabs STT requires a model id; scribe_v1 is the current STT model.
@@ -55,5 +60,5 @@ async function transcribeWithElevenLabs(audio: File): Promise<string> {
     throw new Error(`ElevenLabs STT ${res.status}: ${await res.text()}`);
   }
   const data = (await res.json()) as { text?: string };
-  return data.text ?? "";
+  return (data.text ?? "").trim();
 }

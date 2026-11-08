@@ -3,6 +3,7 @@ import { and, desc, gte, isNull, lte, sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { generateExecutiveInsights } from '@/lib/ai/gemini';
 import { getDb, schema } from '@/lib/db';
+import { denyIfSignedOut } from '@/lib/portal/guard';
 import { handleApiError } from '@/lib/workflow/auth';
 import { parseIncidentDowAndHour } from '@/lib/workflow/rules';
 import type { Answers } from '@/lib/types';
@@ -21,6 +22,10 @@ const STAGE_LABEL: Record<string, string> = {
 
 export async function GET(req: Request) {
   try {
+    // Trends are for logged-in supervisors / executives only.
+    const denied = await denyIfSignedOut();
+    if (denied) return denied;
+
     const { searchParams } = new URL(req.url);
     const now = new Date();
 

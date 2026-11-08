@@ -86,6 +86,13 @@ export function useReportDraft() {
     });
   }, []);
 
+  // Put the answers (and which of them the AI filled) back exactly as they were.
+  // Used by "Undo my last answer" on the conversation page.
+  const restoreDraft = useCallback((previous: Answers, previousAiFilled: Set<string>) => {
+    setAnswers(previous);
+    setAiFilled(new Set(previousAiFilled));
+  }, []);
+
   const reset = useCallback(() => {
     setAnswers({});
     setTranscript(undefined);
@@ -107,6 +114,7 @@ export function useReportDraft() {
     anonymous,
     setAnonymous,
     hydrated,
+    restoreDraft,
     reset,
   };
 }

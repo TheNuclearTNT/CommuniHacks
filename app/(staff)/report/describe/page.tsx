@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Answers } from "@/lib/types";
 import { useReportDraft } from "@/components/form/useReportDraft";
+import { useAssistantVoice } from "@/components/form/useAssistantVoice";
 import { getMe, transcribeIntake } from "@/lib/api-client";
 import { BackLink } from "@/components/form/BackLink";
 import { AnonymousToggle } from "@/components/form/AnonymousToggle";
@@ -75,14 +76,47 @@ const CATEGORIES = [
 // (lib/ai/demo-fixtures.ts), so trying them costs no Gemini quota.
 const DEMO_SCENARIOS = DEMO_STORIES.map((s) => ({ label: s.label, text: s.text }));
 
+// Everything one turn of the conversation can change, saved just before the
+// turn so "Undo my last answer" can put it all back.
+interface Snapshot {
+  conversation: Turn[];
+  fullTranscript: string;
+  askCount: number;
+  category: (typeof CATEGORIES)[number] | null;
+  optionsFor: { id: string; options: string[] } | null;
+  askingText: string | null;
+  askingWhen: { id: string; type: "date" | "time" } | null;
+  lastAsked: string | null;
+  canSkip: string | null;
+  skipIds: string[];
+  finished: boolean;
+  checkedIds: string[];
+  quickCheckDone: boolean;
+  answers: Answers;
+  aiFilled: Set<string>;
+  draftTranscript: string | undefined;
+  // What the reporter typed or said, put back in the box so they can edit it.
+  replyText: string;
+}
+
 // /report/describe — an AI-led conversation. The assistant asks (out loud via
 // ElevenLabs when a key is set, otherwise on screen), the reporter speaks or
 // types, and the AI decides which of the 35 questions actually matter for this
 // incident. It never asks irrelevant branches (e.g. injury on an IT issue).
 export default function DescribePage() {
   const router = useRouter();
-  const { answers, setAnswer, mergeAiAnswers, setTranscript, aiFilled, anonymous, setAnonymous, hydrated } =
-    useReportDraft();
+  const {
+    answers,
+    setAnswer,
+    mergeAiAnswers,
+    transcript: draftTranscript,
+    setTranscript,
+    aiFilled,
+    anonymous,
+    setAnonymous,
+    hydrated,
+    restoreDraft,
+  } = useReportDraft();
 
   // The reporter is whoever is signed in, so the assistant never has to ask.
   useEffect(() => {
@@ -126,8 +160,38 @@ export default function DescribePage() {
   const [lastAsked, setLastAsked] = useState<string | null>(null);
   const [canSkip, setCanSkip] = useState<string | null>(null);
   const [skipIds, setSkipIds] = useState<string[]>([]);
+  // One snapshot per answer given, newest last. Undo pops the last one.
+  const [history, setHistory] = useState<Snapshot[]>([]);
+  // The assistant's voice (ElevenLabs): speak, stop, mute, and what to show.
+  const { voiceOn, speaking, needsTap, voiceStatus, speak, stopSpeaking, toggleVoice } =
+    useAssistantVoice();
+
+  const takeSnapshot = (replyText: string) =>
+    setHistory((h) => [
+      ...h,
+      {
+        conversation,
+        fullTranscript,
+        askCount,
+        category,
+        optionsFor,
+        askingText,
+        askingWhen,
+        lastAsked,
+        canSkip,
+        skipIds,
+        finished,
+        checkedIds,
+        quickCheckDone,
+        answers,
+        aiFilled: new Set(aiFilled),
+        draftTranscript,
+        replyText,
+      },
+    ]);
 
   const chooseCategory = (c: (typeof CATEGORIES)[number]) => {
+    takeSnapshot("");
     setCategory(c);
     setFullTranscript(c.context);
     setConversation((conv) => [...conv, { who: "you", text: c.label }, { who: "ai", text: c.ask }]);
@@ -137,32 +201,15 @@ export default function DescribePage() {
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const spokenOpening = useRef(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Speak a line via ElevenLabs. Silent no-op if TTS is unavailable (204).
-  const speak = useCallback(async (text: string) => {
-    try {
-      const res = await fetch("/api/intake/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      if (res.status !== 200) return; // no voice configured → text only
-      const buf = await res.arrayBuffer();
-      const url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
-      const audio = new Audio(url);
-      await audio.play().catch(() => {});
-    } catch {
-      /* text-only fallback */
-    }
-  }, []);
-
-  // Speak the opening once on mount.
+  // Speak the opening question when the page opens.
   useEffect(() => {
-    if (spokenOpening.current) return;
-    spokenOpening.current = true;
-    void speak(OPENING);
+    const timer = setTimeout(() => void speak(OPENING), 0);
+    return () => clearTimeout(timer);
   }, [speak]);
+
+
 
   const stopTimer = () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -171,6 +218,8 @@ export default function DescribePage() {
 
   const startRecording = async () => {
     setError(null);
+    // The assistant must be quiet while you speak, or the mic would record it.
+    stopSpeaking();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
@@ -178,8 +227,11 @@ export default function DescribePage() {
       mr.ondataavailable = (e) => e.data.size > 0 && chunksRef.current.push(e.data);
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        await handleSpoken(blob);
+        // Label the recording with what the browser really made (Safari records
+        // MP4, Chrome and Firefox record WebM or Ogg).
+        const type = mr.mimeType || "audio/webm";
+        const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+        await handleSpoken(new File(chunksRef.current, `recording.${ext}`, { type }));
       };
       mediaRef.current = mr;
       mr.start();
@@ -201,6 +253,11 @@ export default function DescribePage() {
     setBusy(true);
     try {
       const { transcript } = await transcribeIntake(blob);
+      if (!transcript.trim()) {
+        setError("I didn't hear anything. Tap the mic and try again, or type your answer.");
+        setBusy(false);
+        return;
+      }
       await submitReply(transcript);
     } catch {
       setError("Couldn't hear that. Try again, or type your answer.");
@@ -221,6 +278,10 @@ export default function DescribePage() {
       setBusy(false);
       return;
     }
+    // Save how things stand, so this answer can be undone. A tapped chip has no
+    // text worth putting back in the box; a typed or spoken answer does.
+    stopSpeaking();
+    takeSnapshot(pickedChip || extraSkip ? "" : clean);
     // A typed date/time ("10th sept", "last night", "10 pm") is read here, without AI.
     const parsedWhen =
       askingWhen?.type === "date"
@@ -309,6 +370,38 @@ export default function DescribePage() {
     setBusy(false);
   };
 
+  // Take back the last answer: the conversation, the form answers and the
+  // question being asked all go back to how they were. What was typed or said
+  // comes back in the box to edit, and the question is read out again so the
+  // reporter can simply record a new answer.
+  const undoLast = () => {
+    const snap = history[history.length - 1];
+    if (!snap || busy || recording) return;
+    stopSpeaking();
+    setHistory((h) => h.slice(0, -1));
+    setConversation(snap.conversation);
+    setFullTranscript(snap.fullTranscript);
+    setAskCount(snap.askCount);
+    setCategory(snap.category);
+    setOptionsFor(snap.optionsFor);
+    setAskingText(snap.askingText);
+    setAskingWhen(snap.askingWhen);
+    setLastAsked(snap.lastAsked);
+    setCanSkip(snap.canSkip);
+    setSkipIds(snap.skipIds);
+    setFinished(snap.finished);
+    setCheckedIds(snap.checkedIds);
+    setQuickCheckDone(snap.quickCheckDone);
+    restoreDraft(snap.answers, snap.aiFilled);
+    setTranscript(snap.draftTranscript);
+    setTyped(snap.replyText);
+    setWhenValue("");
+    setError(null);
+    const lastQuestion = [...snap.conversation].reverse().find((t) => t.who === "ai")?.text;
+    if (lastQuestion) void speak(lastQuestion);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   // Answers the AI filled that the reporter hasn't confirmed, in form order.
   // The reporter's own name and description are left out.
   const quickCheckRows = [...new Set([...aiFilled, ...checkedIds])]
@@ -320,6 +413,8 @@ export default function DescribePage() {
       return v != null && v !== "" && !(Array.isArray(v) && v.length === 0);
     })
     .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+
+  const lastAiText = [...conversation].reverse().find((t) => t.who === "ai")?.text ?? OPENING;
 
   if (!hydrated) return null;
 
@@ -334,12 +429,59 @@ export default function DescribePage() {
 
       <AnonymousToggle anonymous={anonymous} onChange={chooseAnonymous} />
 
+      {/* Voice controls: the assistant reads its questions aloud (ElevenLabs) */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" aria-label="Voice controls">
+        {voiceStatus !== "unavailable" && (
+          <button
+            type="button"
+            onClick={toggleVoice}
+            aria-pressed={voiceOn}
+            className={
+              "rounded-full border px-3 py-1.5 font-medium " +
+              (voiceOn
+                ? "border-accent bg-blue-50 text-accent"
+                : "border-slate-300 bg-white text-slate-600")
+            }
+          >
+            Voice: {voiceOn ? "on" : "off"}
+          </button>
+        )}
+        {speaking && (
+          <>
+            <span role="status" className="text-slate-500">
+              Speaking…
+            </span>
+            <button
+              type="button"
+              onClick={stopSpeaking}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-accent"
+            >
+              Stop
+            </button>
+          </>
+        )}
+        {needsTap && !speaking && (
+          <button
+            type="button"
+            onClick={() => void speak(lastAiText, true)}
+            className="rounded-full bg-accent px-3 py-1.5 font-medium text-white hover:bg-blue-800"
+          >
+            Play the question
+          </button>
+        )}
+        {voiceStatus === "unavailable" && (
+          <span className="text-xs text-slate-400">
+            Voice is off right now. You can still read and type your answers.
+          </span>
+        )}
+      </div>
+
       {/* Conversation */}
       <div className="mb-6 flex flex-col gap-3">
         {conversation.map((t, i) => (
           <div
             key={i}
-            className={t.who === "ai" ? "flex" : "flex justify-end"}
+            className={t.who === "ai" ? "flex items-end gap-2" : "flex justify-end"}
           >
             <div
               className={
@@ -351,6 +493,16 @@ export default function DescribePage() {
             >
               {t.text}
             </div>
+            {t.who === "ai" && voiceStatus !== "unavailable" && (
+              <button
+                type="button"
+                onClick={() => void speak(t.text, true)}
+                aria-label="Play this message"
+                className="shrink-0 rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-500 hover:border-accent hover:text-accent"
+              >
+                Play
+              </button>
+            )}
           </div>
         ))}
         {busy && <p className="text-sm text-slate-400">Thinking…</p>}
@@ -425,6 +577,21 @@ export default function DescribePage() {
 
       {error && <p className="mb-4 text-warn">{error}</p>}
 
+      {/* Undo: take back the last answer, then record or type it again */}
+      {history.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={undoLast}
+            disabled={busy || recording}
+            className="tap-target rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-accent hover:text-accent disabled:opacity-50"
+          >
+            ↶ Undo my last answer
+          </button>
+          <span className="text-xs text-slate-400">Then record it again or retype it.</span>
+        </div>
+      )}
+
       {!finished && !category && conversation.length <= 1 ? (
         <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="What kind of incident was it?">
           {CATEGORIES.map((c) => (
@@ -466,6 +633,7 @@ export default function DescribePage() {
 
           <div className="flex gap-2">
             <input
+              ref={inputRef}
               type="text"
               value={typed}
               onChange={(e) => setTyped(e.target.value)}

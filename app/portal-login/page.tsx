@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// DEMO login for the supervisor / executive portal. Password is 123.
-// This is a demo gate only, not real access control.
+// Supervisor / executive sign in. Each person has their own name + password.
+// Demo-grade: every account starts with the password 123 (see README).
 // Where to go after signing in (e.g. a status column clicked on the home
 // page). Only portal pages are allowed.
 function nextPath(): string {
@@ -15,28 +15,38 @@ function nextPath(): string {
 
 export default function PortalLogin() {
   const router = useRouter();
-  const [password, setPassword] = useState("123");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Already signed in: go straight there.
+  // Already signed in: go straight there. Asks the server, because the real
+  // session cookie is hidden from the browser's own scripts.
   useEffect(() => {
-    if (document.cookie.split("; ").includes("portal=1")) {
-      router.replace(nextPath());
-    }
+    let live = true;
+    fetch("/api/portal-login")
+      .then((r) => {
+        if (live && r.ok) router.replace(nextPath());
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, [router]);
 
-  const doSignIn = async (pwd: string) => {
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/portal-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pwd }),
+        body: JSON.stringify({ name, password }),
       });
       if (!res.ok) {
-        setError("Incorrect password. For this demo, enter 123.");
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? "Could not sign in. Please try again.");
         setBusy(false);
         return;
       }
@@ -48,10 +58,10 @@ export default function PortalLogin() {
     }
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await doSignIn(password);
-  };
+  const inputClass =
+    "w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-3 text-base text-slate-900 outline-none transition focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20";
+  const labelClass =
+    "mb-1.5 block text-xs font-semibold uppercase tracking-[0.06em] text-slate-600";
 
   return (
     <main className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md flex-col justify-center px-4 py-10">
@@ -67,27 +77,40 @@ export default function PortalLogin() {
           Supervisor &amp; Leadership Portal
         </span>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-          Portal sign in
+          Supervisor Login
         </h1>
         <p className="mt-1 mb-6 text-sm text-slate-600">
-          Access form responses, the 4-stage pathway board, trends, and the live 35-question form editor.
+          Sign in with your own name and password to review reports, see
+          trends, and use the form editor.
         </p>
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label
-              htmlFor="portal-password"
-              className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.06em] text-slate-600"
-            >
-              Demo Password (pre-filled: 123)
+            <label htmlFor="portal-name" className={labelClass}>
+              Name
+            </label>
+            <input
+              id="portal-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={inputClass}
+              autoComplete="username"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label htmlFor="portal-password" className={labelClass}>
+              Password
             </label>
             <input
               id="portal-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-3 text-base text-slate-900 outline-none transition focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20"
-              autoFocus
+              className={inputClass}
+              autoComplete="current-password"
             />
           </div>
 
@@ -102,15 +125,15 @@ export default function PortalLogin() {
 
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || !name.trim() || !password}
             className="tap-target w-full rounded-xl bg-accent px-5 py-3.5 text-base font-semibold text-white shadow-xs transition hover:bg-blue-800 disabled:opacity-50"
           >
-            {busy ? "Signing in…" : "Enter Portal →"}
+            {busy ? "Signing in…" : "Sign in →"}
           </button>
         </form>
 
         <p className="mt-5 text-center text-xs text-slate-400">
-          Demo gate only — you can also switch staff personas at any time from the top navigation bar.
+          Demo prototype — every account starts with the password 123.
         </p>
       </div>
     </main>

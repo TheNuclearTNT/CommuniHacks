@@ -2,6 +2,7 @@ import { endOfMonth, startOfMonth, subMonths, subWeeks } from 'date-fns';
 import { sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { denyIfSignedOut } from '@/lib/portal/guard';
 import type { Answers, IncidentType, Status, TrendsResponse } from '@/lib/types';
 import { handleApiError } from '@/lib/workflow/auth';
 import {
@@ -38,6 +39,10 @@ function extractRows<T = Record<string, unknown>>(res: unknown): T[] {
 
 export async function GET(req: Request) {
   try {
+    // Trends are for logged-in supervisors / executives only.
+    const denied = await denyIfSignedOut();
+    if (denied) return denied;
+
     const { searchParams } = new URL(req.url);
     const now = new Date();
 

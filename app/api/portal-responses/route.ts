@@ -1,24 +1,43 @@
-import { desc } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@/lib/db";
+import { denyIfSignedOut } from "@/lib/portal/guard";
 import { extractLocation } from "@/lib/workflow/rules";
+
+const REVIEW_WINDOW_MS = 24 * 3600_000;
 
 // GET /api/portal-responses — reviewer view of every incident with the key
 // fields the brief asks for: location, time, reporter, victim name, summary,
 // status, type, and the 24h supervisor-review clock.
-// Gated by the demo `portal` cookie.
+// Requires a logged-in supervisor / executive (signed session cookie).
+//
+// Supervisor-review clock: always 24 hours from when the report was SUBMITTED
+// (or, for a reopened record, from when it was reopened). Not from the
+// incident time typed into the form.
 export async function GET() {
-  const signedIn = (await cookies()).get("portal")?.value === "1";
-  if (!signedIn) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
 
   const db = await getDb();
-  const rows = await db
-    .select()
-    .from(schema.incidents)
-    .orderBy(desc(schema.incidents.createdAt));
+  const [rows, reviews, reopenEvents] = await Promise.all([
+    db.select().from(schema.incidents).orderBy(desc(schema.incidents.createdAt)),
+    db.select().from(schema.supervisorReviews),
+    db.select().from(schema.events).where(eq(schema.events.kind, "REOPENED")),
+  ]);
+
+  // When each supervisor review was handed in, per incident + cycle.
+  const reviewedAt = new Map<string, number>();
+  for (const r of reviews) {
+    reviewedAt.set(`${r.incidentId}:${r.cycle}`, new Date(r.submittedAt).getTime());
+  }
+
+  // Latest reopen time per incident + cycle (starts the clock again).
+  const reopenedAt = new Map<string, number>();
+  for (const e of reopenEvents) {
+    const key = `${e.incidentId}:${e.cycle}`;
+    const t = new Date(e.time).getTime();
+    if (t > (reopenedAt.get(key) ?? 0)) reopenedAt.set(key, t);
+  }
 
   const items = rows.map((inc) => {
     const a = inc.answers ?? {};
@@ -27,13 +46,13 @@ export async function GET() {
       (typeof a.q32 === "string" ? a.q32.trim() : "") ||
       `Incident ${inc.id}`;
 
-    // Supervisor review is due 24h from the incident time (q1 date + q2 time),
-    // falling back to the submission time when those are missing.
-    const incidentAt = parseIncidentDateTime(
-      typeof a.q1 === "string" ? a.q1 : undefined,
-      typeof a.q2 === "string" ? a.q2 : undefined,
-    ) ?? new Date(inc.createdAt);
-    const reviewDueAt = new Date(incidentAt.getTime() + 24 * 3600_000);
+    const cycleKey = `${inc.id}:${inc.cycle}`;
+    const startMs =
+      inc.cycle > 1
+        ? (reopenedAt.get(cycleKey) ?? new Date(inc.createdAt).getTime())
+        : new Date(inc.createdAt).getTime();
+    const dueMs = startMs + REVIEW_WINDOW_MS;
+    const submittedMs = reviewedAt.get(cycleKey) ?? null;
 
     return {
       id: inc.id,
@@ -48,35 +67,16 @@ export async function GET() {
       victim: typeof a.q11 === "string" ? a.q11 : "N/A",
       summary,
       createdAt: new Date(inc.createdAt).toISOString(),
-      reviewDueAt: reviewDueAt.toISOString(),
-      // The review is "done" once the incident has moved past supervisor review.
-      reviewDone: !["SUBMITTED", "SUPERVISOR_REVIEW"].includes(inc.status),
+      reviewStartedAt: new Date(startMs).toISOString(),
+      reviewDueAt: new Date(dueMs).toISOString(),
+      reviewSubmittedAt:
+        submittedMs === null ? null : new Date(submittedMs).toISOString(),
+      // Done once a review exists for this cycle, or the record has moved on.
+      reviewDone:
+        submittedMs !== null ||
+        !["SUBMITTED", "SUPERVISOR_REVIEW", "REOPENED"].includes(inc.status),
     };
   });
 
   return NextResponse.json(items);
-}
-
-// Parse "2026-11-05" + "2:15PM" into a Date. Returns null if it can't.
-function parseIncidentDateTime(
-  date: string | undefined,
-  time: string | undefined,
-): Date | null {
-  if (!date) return null;
-  let hours = 9;
-  let minutes = 0;
-  if (time) {
-    const m = time.trim().match(/^(\d{1,2}):?(\d{2})?\s*(AM|PM)?$/i);
-    if (m) {
-      hours = parseInt(m[1], 10);
-      minutes = m[2] ? parseInt(m[2], 10) : 0;
-      const ampm = m[3]?.toUpperCase();
-      if (ampm === "PM" && hours < 12) hours += 12;
-      if (ampm === "AM" && hours === 12) hours = 0;
-    }
-  }
-  const d = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(hours, minutes, 0, 0);
-  return d;
 }

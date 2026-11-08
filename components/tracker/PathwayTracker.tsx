@@ -92,7 +92,7 @@ export function PathwayTracker({ detail }: PathwayTrackerProps) {
               key={stage.key}
               className={`relative flex flex-col justify-between rounded-xl border p-3 transition ${
                 isActive
-                  ? 'border-blue-400 bg-blue-50/70 ring-2 ring-blue-500/20'
+                  ? 'border-sky-400 bg-sky-50/70 ring-2 ring-sky-500/20'
                   : isCompleted
                     ? 'border-emerald-200 bg-emerald-50/40'
                     : 'border-slate-200 bg-slate-50/50 opacity-75'

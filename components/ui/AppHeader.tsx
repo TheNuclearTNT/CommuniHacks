@@ -3,10 +3,6 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { getMe, getUsers, setMe } from '@/lib/api-client';
-import { SEED_USERS as MOCK_USERS } from '@/lib/mock/connan';
-import { getRoleLabel } from '@/lib/question-labels';
-import type { Role, User } from '@/lib/types';
 
 interface NavLinkItem {
   href: string;
@@ -14,85 +10,86 @@ interface NavLinkItem {
   matchPrefix: string[];
 }
 
+// Everything below is for logged-in supervisors / executives. A visitor who is
+// not logged in never sees these links.
 const NAV_LINKS: NavLinkItem[] = [
   { href: '/report', label: 'Report incident', matchPrefix: ['/report'] },
   { href: '/my-reports', label: 'My reports', matchPrefix: ['/my-reports'] },
   { href: '/supervisor', label: 'Supervisor', matchPrefix: ['/supervisor'] },
   { href: '/inbox', label: 'Specialty inbox', matchPrefix: ['/inbox'] },
   { href: '/ea', label: 'EA filing', matchPrefix: ['/ea'] },
-  { href: '/dashboard', label: 'Trends', matchPrefix: ['/dashboard'] },
-  { href: '/portal/responses', label: 'Portal', matchPrefix: ['/portal'] },
+  { href: '/portal/trends', label: 'Trends', matchPrefix: ['/portal/trends'] },
+  {
+    href: '/portal/responses',
+    label: 'Portal',
+    matchPrefix: ['/portal/responses', '/portal/status', '/portal/form-editor', '/portal/accounts'],
+  },
 ];
 
-const ROLE_DEFAULT_DEST: Record<Role, string> = {
-  STAFF: '/report',
-  SUPERVISOR: '/supervisor',
-  PRIVACY_OFFICER: '/inbox',
-  JOHSC_CHAIR: '/inbox',
-  IT_FACILITIES: '/inbox',
-  DIRECTOR_OPS: '/inbox',
-  CID_GROUP: '/inbox',
-  EXEC_ASSISTANT: '/ea',
-  EXECUTIVE: '/dashboard',
-};
+interface Me {
+  name: string;
+  isAdmin: boolean;
+}
+
+function Brand({ withSubtitle }: { withSubtitle: boolean }) {
+  return (
+    <Link href="/" className="group flex items-center gap-2.5">
+      {/* Logo-green tile with a dark-brown "L" (6:1 contrast) */}
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold text-slate-900 shadow-2xs transition group-hover:bg-blue-300">
+        L
+      </div>
+      <div className="leading-tight">
+        <span className="block text-sm font-bold tracking-tight text-slate-900">Langs Line</span>
+        {withSubtitle ? (
+          <span className="block text-[11px] font-medium text-slate-500">
+            Incident &amp; Pathway Console
+          </span>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
 
 export function AppHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[3]); // Bill Teasdale default
-  const [switching, setSwitching] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
 
+  // Is a supervisor / executive logged in? Asks the server, because the real
+  // session cookie is hidden from the browser. Re-checks on every page change,
+  // so it updates right after signing in or out.
   useEffect(() => {
-    let active = true;
-    Promise.all([
-      getUsers().catch(() => MOCK_USERS),
-      getMe().catch(() => MOCK_USERS[3]),
-    ]).then(([userList, me]) => {
-      if (!active) return;
-      const list = userList.length ? userList : MOCK_USERS;
-      setUsers(list);
-      const matched = list.find((u) => u.id === me.id) ?? list.find((u) => u.role === me.role) ?? me;
-      setCurrentUser(matched);
-    });
+    let live = true;
+    fetch('/api/portal-login')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { account?: Me } | null) => {
+        if (live) setMe(d?.account ?? null);
+      })
+      .catch(() => {
+        if (live) setMe(null);
+      });
     return () => {
-      active = false;
+      live = false;
     };
   }, [pathname]);
 
-  const handleSelectUser = async (userId: string, navigateToWorkspace = false) => {
-    const selected = users.find((u) => u.id === userId);
-    if (!selected) return;
-    setSwitching(true);
-    setCurrentUser(selected);
-    try {
-      await setMe({ userId: selected.id, role: selected.role });
-    } catch {
-      // Ignore if offline
-    } finally {
-      setSwitching(false);
-      window.dispatchEvent(new CustomEvent('langs:role-changed', { detail: selected }));
-      if (navigateToWorkspace) {
-        router.push(ROLE_DEFAULT_DEST[selected.role] ?? '/');
-      } else {
-        router.refresh();
-      }
-    }
+  const signOut = async () => {
+    await fetch('/api/portal-login', { method: 'DELETE' }).catch(() => {});
+    setMe(null);
+    router.push('/');
+    router.refresh();
   };
 
   // Someone filling in a report only needs the brand and a way out — no
-  // reviewer links, "My reports" or persona switcher.
+  // reviewer links, "My reports" or sign-in details.
   const staffMode = ['/report', '/my-reports'].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
   if (staffMode) {
     return (
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b-2 border-brand bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">L</div>
-            <span className="text-sm font-bold tracking-tight text-slate-900">Langs Line</span>
-          </Link>
+          <Brand withSubtitle={false} />
           <Link href="/" className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900">
             ← Home
           </Link>
@@ -101,24 +98,28 @@ export function AppHeader() {
     );
   }
 
-  return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-        {/* Brand */}
-        <div className="flex items-center gap-5">
-          <Link href="/" className="group flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white shadow-2xs transition group-hover:bg-blue-800">
-              L
-            </div>
-            <div className="leading-tight">
-              <span className="block text-sm font-bold tracking-tight text-slate-900">
-                Langs Line
-              </span>
-              <span className="block text-[11px] font-medium text-slate-500">
-                Incident &amp; Pathway Console
-              </span>
-            </div>
+  // Not logged in: nothing from the supervisor / executive side.
+  if (!me) {
+    return (
+      <header className="sticky top-0 z-40 border-b-2 border-brand bg-white/95 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
+          <Brand withSubtitle={false} />
+          <Link
+            href="/report"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          >
+            Report an incident
           </Link>
+        </div>
+      </header>
+    );
+  }
+
+  return (
+    <header className="sticky top-0 z-40 border-b-2 border-brand bg-white/95 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+        <div className="flex items-center gap-5">
+          <Brand withSubtitle />
 
           {/* Navigation links */}
           <nav aria-label="Main navigation" className="hidden items-center gap-1 lg:flex">
@@ -143,35 +144,18 @@ export function AppHeader() {
           </nav>
         </div>
 
-        {/* Live Demo Persona Switcher */}
+        {/* Who is signed in */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-            <span className="hidden text-[11px] font-semibold uppercase tracking-wider text-slate-500 sm:inline">
-              Active Persona:
-            </span>
-            <select
-              aria-label="Switch demo persona"
-              value={currentUser.id}
-              disabled={switching}
-              onChange={(e) => handleSelectUser(e.target.value, false)}
-              className="cursor-pointer bg-transparent text-xs font-semibold text-slate-900 focus:outline-none"
-            >
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} — {getRoleLabel(u.role)}
-                  {u.site ? ` (${u.site})` : ''}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => handleSelectUser(currentUser.id, true)}
-              title={`Open ${getRoleLabel(currentUser.role)} workspace`}
-              className="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-blue-800"
-            >
-              Open view →
-            </button>
-          </div>
+          <span className="text-xs text-slate-500">
+            Signed in as <span className="font-semibold text-slate-800">{me.name}</span>
+          </span>
+          <button
+            type="button"
+            onClick={signOut}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+          >
+            Sign out
+          </button>
         </div>
       </div>
 

@@ -2,12 +2,15 @@
 
 :root {
   --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Default text: a deep Langs brown (the logo brown, darkened for contrast). */
+  --foreground: #4a2f14;
 
-  /* Single primary accent (calm clinical blue) + semantic status colours. */
-  --accent: #1d4ed8;
-  --accent-hover: #1e40af;
-  --accent-light: #eff6ff;
+  /* Single primary accent: a deep Langs green (the logo green, darkened so
+     white button text and green text on white both pass 4.5:1) + semantic
+     status colours. The raw logo green (--color-brand) is too light for text. */
+  --accent: #47711a;
+  --accent-hover: #3a5c15;
+  --accent-light: #f5f9ec;
   --critical: #dc2626;
   --warn: #d97706;
   --success: #059669;
@@ -26,6 +29,55 @@
   /* Shared max-widths so staff and review layouts stay consistent. */
   --spacing-staff: 36rem; /* 576px */
   --spacing-review: 80rem; /* 1280px */
+}
+
+/* ---- Langs colour scheme -------------------------------------------------
+   Taken from the Langs logo: green #9bc55b and brown #7a5222.
+
+   Rather than editing every class in every file, the two palettes the app
+   already uses are re-pointed here:
+     blue-*          -> Langs green   (every blue button, badge, link, ring)
+     slate-/gray-400+ -> Langs brown   (headings, body text, muted text)
+   Light shades (50-300) of slate/gray stay neutral for backgrounds and borders.
+
+   Anything that must keep its own meaning uses another hue on purpose:
+   stage colours use sky (not blue), "done" stays emerald, warnings amber,
+   Critical red. Contrast was checked: all text pairs are 4.5:1 or better,
+   except the small muted hint shade (slate-400) at about 3.5:1. */
+@theme {
+  --color-brand: #9bc55b; /* logo green: fills, borders, the "L" mark. Not for text. */
+  --color-brand-brown: #7a5222; /* logo brown */
+
+  /* blue -> Langs green */
+  --color-blue-50: #f5f9ec;
+  --color-blue-100: #e8f2d4;
+  --color-blue-200: #d2e6ab;
+  --color-blue-300: #b8d680;
+  --color-blue-400: #9bc55b;
+  --color-blue-500: #7fab3f;
+  --color-blue-600: #587f21;
+  --color-blue-700: #47711a;
+  --color-blue-800: #3a5c15;
+  --color-blue-900: #2e4812;
+  --color-blue-950: #1b2c09;
+
+  /* slate -> Langs brown (text shades only) */
+  --color-slate-400: #a08060;
+  --color-slate-500: #85633a;
+  --color-slate-600: #7a5222;
+  --color-slate-700: #684420;
+  --color-slate-800: #573819;
+  --color-slate-900: #4a2f14;
+  --color-slate-950: #33200d;
+
+  /* gray -> the same browns (the trends dashboard uses gray-*) */
+  --color-gray-400: #a08060;
+  --color-gray-500: #85633a;
+  --color-gray-600: #7a5222;
+  --color-gray-700: #684420;
+  --color-gray-800: #573819;
+  --color-gray-900: #4a2f14;
+  --color-gray-950: #33200d;
 }
 
 /* Light-only clinical theme across all devices. */

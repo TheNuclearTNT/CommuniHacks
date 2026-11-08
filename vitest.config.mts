@@ -13,6 +13,7 @@ export default defineConfig({
       'lib/**/__tests__/**/*.test.ts',
       'lib/**/*.test.ts',
       'components/**/*.test.ts',
+      'app/**/*.test.ts',
     ],
   },
 });

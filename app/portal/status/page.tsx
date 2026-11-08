@@ -42,8 +42,8 @@ const BUCKETS: {
     key: "in-progress",
     title: "Under specialty review",
     note: "Stage 3 · Parallel specialty acknowledgements",
-    accentBorder: "border-t-4 border-t-blue-600",
-    badgeClass: "bg-blue-50 text-blue-800 border-blue-200",
+    accentBorder: "border-t-4 border-t-sky-600",
+    badgeClass: "bg-sky-50 text-sky-800 border-sky-200",
   },
   {
     key: "with-exec",

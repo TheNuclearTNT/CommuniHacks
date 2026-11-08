@@ -63,7 +63,7 @@ export function Heatmap({ data }: { data: TrendsResponse['heatmap'] }) {
                     title={label}
                     aria-label={label}
                     className="flex h-8 items-center justify-center rounded-sm tabular-nums hover:ring-2 hover:ring-gray-900"
-                    style={{ background: HEAT_STEPS[s], color: s >= 4 ? '#ffffff' : '#0b0b0b' }}
+                    style={{ background: HEAT_STEPS[s], color: s >= 5 ? '#ffffff' : '#0b0b0b' }}
                   >
                     {n > 0 ? n : ''}
                   </div>

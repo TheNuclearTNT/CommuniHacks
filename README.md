@@ -94,11 +94,15 @@ Put these in `.env.local` (never commit it — it is already git-ignored):
 | `DATABASE_URL` | Your TigerData / PostgreSQL connection string (starts with `postgres://`). |
 | `GEMINI_API_KEY` | Google Gemini API key. |
 | `GEMINI_MODEL` | Gemini model name, e.g. `gemini-2.5-flash`. |
-| `ELEVENLABS_API_KEY` | ElevenLabs API key for voice. |
-| `USE_MOCK_AI` | `true` runs canned AI/voice responses offline (no keys needed). `false` uses the real APIs. |
+| `ELEVENLABS_API_KEY` | ElevenLabs API key for voice: the assistant speaks its questions, and recordings are turned into text. |
+| `ELEVENLABS_VOICE_ID` | Optional. Which voice speaks. Defaults to the premade voice "Sarah". Free plans can only use premade voices. |
+| `USE_MOCK_VOICE` | Optional. `true` turns voice off: the assistant stays silent and recordings return a canned demo story. |
+| `USE_MOCK_AI` | `true` runs canned AI responses offline (no Gemini key needed). `false` uses the real Gemini API. |
 | `ALLOW_SEED_TIME` | `true` lets the seed script back-date sample data. |
 
-With `USE_MOCK_AI=true`, the app runs fully offline with deterministic sample responses — useful for a demo without live keys. The real adaptive conversation needs `USE_MOCK_AI=false` and real keys.
+With `USE_MOCK_AI=true`, the AI runs fully offline with deterministic sample responses — useful for a demo without a Gemini key. The real adaptive conversation needs `USE_MOCK_AI=false` and a real Gemini key.
+
+Voice is switched separately. With a real `ELEVENLABS_API_KEY`, the assistant speaks and listens for real even while `USE_MOCK_AI=true`.
 
 ## Scripts
 

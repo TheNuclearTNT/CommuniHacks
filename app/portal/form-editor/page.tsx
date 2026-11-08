@@ -106,7 +106,7 @@ export default function FormEditorPage() {
                   type="checkbox"
                   checked={q.required}
                   onChange={(e) => update(q.id, { required: e.target.checked })}
-                  className="accent-[#1d4ed8]"
+                  className="accent-accent"
                 />
                 Required
               </label>

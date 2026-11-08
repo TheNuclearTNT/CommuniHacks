@@ -1,19 +1,14 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { requireSignedIn } from "@/lib/portal/guard";
 import { PortalNav } from "./PortalNav";
 
-// Wraps every /portal/* page EXCEPT the login page (which lives at
-// /portal/login and is outside this check because it needs to render without
-// the cookie). The gate is demo-only.
+// Wraps every /portal/* page. Logged-out visitors are sent to /portal-login
+// (which lives outside this layout so it can render without a session).
 export default async function PortalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const signedIn = (await cookies()).get("portal")?.value === "1";
-  if (!signedIn) {
-    redirect("/portal-login");
-  }
+  await requireSignedIn();
 
   return (
     <div className="min-h-screen bg-white">

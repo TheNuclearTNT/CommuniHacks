@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { denyIfSignedOut } from "@/lib/portal/guard";
+import { rowsOf } from "@/lib/portal/rows";
 import questionsJson from "@/config/questions.json";
 
 // Stores an editable copy of the 35-question config so supervisors/executives
@@ -27,11 +28,12 @@ async function ensureTable() {
 export async function GET() {
   try {
     const db = await ensureTable();
-    const rows = await db.execute(
-      sql`SELECT value FROM app_settings WHERE key = ${KEY} LIMIT 1`,
+    const rows = rowsOf<{ value: unknown }>(
+      await db.execute(
+        sql`SELECT value FROM app_settings WHERE key = ${KEY} LIMIT 1`,
+      ),
     );
-    const row = (rows as unknown as { rows?: { value: unknown }[] }).rows?.[0];
-    const stored = row?.value;
+    const stored = rows[0]?.value;
     if (stored) {
       return NextResponse.json(stored);
     }
@@ -44,10 +46,8 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
-  const signedIn = (await cookies()).get("portal")?.value === "1";
-  if (!signedIn) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object" || !Array.isArray(body.questions)) {
