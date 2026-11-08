@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Answers } from "@/lib/types";
 import { useReportDraft } from "@/components/form/useReportDraft";
-import { transcribeIntake } from "@/lib/api-client";
+import { getMe, transcribeIntake } from "@/lib/api-client";
 import { BackLink } from "@/components/form/BackLink";
+import { QUESTION_BY_ID } from "@/components/form/questions";
 
 // A line in the conversation shown on screen.
 interface Turn {
@@ -24,8 +25,48 @@ interface ConverseResponse {
   mock: boolean;
 }
 
-const OPENING = "Hi, I'm here to help you report what happened. Tell me what happened — where, when, and who was involved.";
+const OPENING = "Hi, I'm here to help you report what happened. First, what kind of incident was it?";
 const MAX_AI_QUESTIONS = 6;
+
+// Step 1 of the conversation: a broad category. It only steers the AI (it is
+// sent as context with the story); the supervisor still confirms the real type.
+const CATEGORIES = [
+  {
+    id: "hurt",
+    label: "Someone was hurt",
+    hint: "Injury, fall, sharps, feeling unwell",
+    context: "Type of incident (chosen by reporter): someone was hurt or injured.",
+    ask: "I'm sorry to hear that. Tell me what happened: where and when, who was hurt, and what care was given.",
+  },
+  {
+    id: "building",
+    label: "Building, equipment or safety",
+    hint: "Damage, hazard, theft, near miss",
+    context: "Type of incident (chosen by reporter): building, equipment or safety hazard (damage, theft, near miss).",
+    ask: "Got it. Tell me what happened: where and when, what was damaged or unsafe, and whether anyone was nearly hurt.",
+  },
+  {
+    id: "office",
+    label: "Privacy, office or IT",
+    hint: "Wrong email, records, computers, phishing",
+    context: "Type of incident (chosen by reporter): privacy, confidentiality, office or IT/cybersecurity.",
+    ask: "Thanks. Tell me what happened: what information or system was involved, where and when, and what you did right away.",
+  },
+  {
+    id: "behaviour",
+    label: "Behaviour or conflict",
+    hint: "Aggression, harassment, complaint",
+    context: "Type of incident (chosen by reporter): behaviour or conflict involving a client, visitor or staff member.",
+    ask: "Thank you for reporting it. Tell me what happened: where and when, who was involved, and how it was handled.",
+  },
+  {
+    id: "unsure",
+    label: "Something else / not sure",
+    hint: "Just describe it",
+    context: "",
+    ask: "No problem. Tell me what happened: where, when, and who was involved.",
+  },
+] as const;
 
 // Quick-fill example stories for demos (from the team's earlier version).
 const DEMO_SCENARIOS = [
@@ -49,7 +90,15 @@ const DEMO_SCENARIOS = [
 // incident. It never asks irrelevant branches (e.g. injury on an IT issue).
 export default function DescribePage() {
   const router = useRouter();
-  const { answers, mergeAiAnswers, setTranscript, hydrated } = useReportDraft();
+  const { answers, setAnswer, mergeAiAnswers, setTranscript, hydrated } = useReportDraft();
+
+  // The reporter is whoever is signed in, so the assistant never has to ask.
+  useEffect(() => {
+    if (!hydrated || answers.q3) return;
+    getMe()
+      .then((me) => me.name && setAnswer("q3", me.name))
+      .catch(() => {});
+  }, [hydrated, answers.q3, setAnswer]);
 
   const [conversation, setConversation] = useState<Turn[]>([
     { who: "ai", text: OPENING },
@@ -62,6 +111,19 @@ export default function DescribePage() {
   const [error, setError] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
   const [askCount, setAskCount] = useState(0);
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number] | null>(null);
+  // Tap-to-answer choices for the assistant's current multiple-choice question.
+  const [optionsFor, setOptionsFor] = useState<{ id: string; options: string[] } | null>(null);
+  // The free-text question the assistant just asked: a typed reply answers it
+  // directly (short replies like "Not applicable" are too thin for the AI).
+  const [askingText, setAskingText] = useState<string | null>(null);
+
+  const chooseCategory = (c: (typeof CATEGORIES)[number]) => {
+    setCategory(c);
+    setFullTranscript(c.context);
+    setConversation((conv) => [...conv, { who: "you", text: c.label }, { who: "ai", text: c.ask }]);
+    void speak(c.ask);
+  };
 
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -138,24 +200,31 @@ export default function DescribePage() {
   };
 
   // Send the reporter's reply into the conversation and act on the AI's turn.
-  const submitReply = async (reply: string) => {
+  // `picked` is set when the reporter taps one of the answer chips: that answer
+  // goes straight into the form instead of relying on the AI to map the words.
+  const submitReply = async (reply: string, pickedChip?: { id: string; value: string }) => {
     const clean = reply.trim();
     if (!clean) {
       setBusy(false);
       return;
     }
+    const picked = pickedChip ?? (askingText ? { id: askingText, value: clean } : undefined);
+    setAskingText(null);
     setConversation((c) => [...c, { who: "you", text: clean }]);
     const nextTranscript = (fullTranscript + " " + clean).trim();
     setFullTranscript(nextTranscript);
     setTyped("");
+    setOptionsFor(null);
     setBusy(true);
     setError(null);
+    if (picked) setAnswer(picked.id, picked.value);
+    const sentAnswers = picked ? { ...answers, [picked.id]: picked.value } : answers;
 
     try {
       const res = await fetch("/api/intake/converse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: nextTranscript, answers }),
+        body: JSON.stringify({ transcript: nextTranscript, answers: sentAnswers }),
       });
       if (!res.ok) throw new Error(String(res.status));
       const data: ConverseResponse = await res.json();
@@ -176,6 +245,9 @@ export default function DescribePage() {
       } else {
         setAskCount((n) => n + 1);
         pushAi(data.next.question);
+        const q = QUESTION_BY_ID[data.next.questionId];
+        if (q?.type === "single" && q.options) setOptionsFor({ id: q.id, options: q.options });
+        else if (q && (q.type === "short" || q.type === "long")) setAskingText(q.id);
       }
     } catch {
       setError("The assistant is unavailable. You can fill the form instead.");
@@ -229,9 +301,38 @@ export default function DescribePage() {
         {busy && <p className="text-sm text-slate-400">Thinking…</p>}
       </div>
 
+      {optionsFor && !busy && !finished && (
+        <div className="mb-6 flex flex-wrap gap-2" role="group" aria-label="Choose an answer">
+          {optionsFor.options.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => void submitReply(option, { id: optionsFor.id, value: option })}
+              className="tap-target rounded-full border border-accent bg-white px-4 py-2 text-sm font-medium text-accent hover:bg-blue-50"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+
       {error && <p className="mb-4 text-warn">{error}</p>}
 
-      {!finished ? (
+      {!finished && !category && conversation.length <= 1 ? (
+        <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="What kind of incident was it?">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => chooseCategory(c)}
+              className="tap-target flex flex-col items-start rounded-2xl border border-slate-300 bg-white px-5 py-4 text-left transition hover:border-accent hover:bg-blue-50"
+            >
+              <span className="text-lg font-semibold text-slate-900">{c.label}</span>
+              <span className="mt-0.5 text-sm text-slate-500">{c.hint}</span>
+            </button>
+          ))}
+        </div>
+      ) : !finished ? (
         <>
           <div className="mb-4 flex flex-col items-center">
             <button
@@ -277,8 +378,8 @@ export default function DescribePage() {
             </button>
           </div>
 
-          {/* Demo quick-fill: only offered before the reporter has said anything */}
-          {conversation.length <= 1 && (
+          {/* Demo quick-fill: only offered before the reporter has told the story */}
+          {conversation.length <= 3 && (
             <div className="mt-4">
               <p className="mb-2 text-xs font-medium text-slate-400">
                 Or try an example (for demos)

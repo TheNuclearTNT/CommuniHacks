@@ -70,24 +70,34 @@ function conversationalPrompt(id: string): string {
 function buildSchema() {
   const properties: Record<string, unknown> = {};
   for (const q of QUESTIONS) {
+    // The question text tells the model what each q-id means.
+    const description = q.help ? `${q.label} (${q.help})` : q.label;
     if (q.type === "single" && q.options) {
-      properties[q.id] = { type: "string", enum: [...q.options, ""] };
+      // Gemini rejects empty enum values; unknown answers are simply left out.
+      properties[q.id] = { type: "string", description, enum: q.options, nullable: true };
     } else if (q.type === "multi" && q.options) {
       properties[q.id] = {
         type: "array",
+        description,
         items: { type: "string", enum: q.options },
+        nullable: true,
       };
     } else {
-      properties[q.id] = { type: "string" };
+      properties[q.id] = { type: "string", description, nullable: true };
     }
   }
-  return { type: "object", properties };
+  // Every field required-but-nullable: with all-optional fields Gemini fills
+  // only two or three answers and stops.
+  return { type: "object", properties, required: QUESTIONS.map((q) => q.id) };
 }
 
 const SYSTEM_INSTRUCTION = [
   "You map a spoken incident narrative onto a fixed health-centre form.",
-  "Fill only what the speaker actually said or clearly implied. Never invent.",
-  "If something is unknown, leave it out (null).",
+  "Answer every question the narrative states or clearly implies, including",
+  "yes/no questions (e.g. someone was hurt -> injury involved = Yes; an email",
+  "sent to the wrong person -> confidentiality involved = Yes). Never invent",
+  "facts the narrative does not support; use null for those.",
+  "Always fill q32.",
   "Map loose speech to the exact option text provided in the schema enums.",
   "For the free-text narrative field q32, write a factual, first-person-neutral",
   "rewrite with NO assumptions or opinions.",
@@ -135,8 +145,11 @@ async function callGemini(req: IntakeExtractRequest): Promise<Answers> {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
   const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
+  // Langs is in Ontario; "today" / "this morning" / "yesterday" resolve against this.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
   const prompt = [
     SYSTEM_INSTRUCTION,
+    `Today's date is ${today} (YYYY-MM-DD, Ontario time). Use it to fill q1 when the reporter says "today", "this morning", "yesterday" and so on. Write q2 like 9:40AM.`,
     "",
     "Answers already provided (do NOT overwrite non-empty ones):",
     JSON.stringify(req.answers),
