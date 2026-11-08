@@ -1,5 +1,14 @@
 # Requests to Connan (from Ananya)
 
+## Status after your "Improvements" commit (7 Nov, 17:41) — thanks!
+- ✅ #2 heatmap: now from q1/q2, Friday 2pm peak shows correctly
+- ✅ #4 `npm run seed`
+- ✅ `reopenedRate` as 0–1 (the dashboard reads it as a fraction again)
+- ⏳ **#1 stage durations — still open.** Specialty acknowledgement shows 1.5 days on the seeded data; with `stageSql` below it's 3.3 days. It's still the slowest stage, so the headline is right, but the gap is too small to make the point in the demo.
+- ⏳ **#3 briefing — partly done.** `computeDeterministicInsights` no longer contradicts the data 👍 but it only sees counts by type/site, so it reports "Main Site has the most reports" rather than the Friday-afternoon cluster, the rising Grow falls and the slow acknowledgements that the demo script reads out. It also shows raw codes ("BEHAVIOURAL") in the text. Adding the queries from `ruleBasedInsights` below (hotspot by site + weekday, rising injury detail, misdirected emails, slowest stage) would give it the planted patterns.
+
+---
+
 Your scaffold already covers most of what the seed needed: `transition()`, `POST /api/clocks/:id/met`, and `getDb`/`schema`. `scripts/seed.ts` runs every record through `transition()` and then moves the timestamps it wrote onto a 12-week timeline, so **you don't need to add a seed-time header or a reset endpoint.**
 
 What's left is three fixes in your trends and insights routes, plus one `package.json` line. I tested all the SQL below on the seeded data (local PGlite, 200 records).

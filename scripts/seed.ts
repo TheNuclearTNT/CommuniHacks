@@ -5,9 +5,12 @@
 // stamps everything "now", so afterwards the seed moves each record's
 // timestamps onto its planned 12-week timeline.
 //
-//   npm run seed          # once package.json has it (docs/requests/connan.md #4)
-//   npx tsx --env-file-if-exists=.env.local scripts/seed.ts
-//                         # DATABASE_URL from .env.local, else local PGlite (.pgdata)
+// The workflow runs against a throwaway in-memory database, and the finished
+// rows are then copied to the real one in a few bulk inserts: a hosted
+// Postgres is far too slow for the ~8,000 small queries the workflow makes.
+//
+//   npx tsx --env-file=.env.local scripts/seed.ts   # DATABASE_URL from .env.local
+//   npm run seed                                     # local PGlite (.pgdata); doesn't read .env.local
 //   ... scripts/seed.ts --dry     # just print the plan
 //
 // Wipes all existing incidents first (users are kept). Stop `npm run dev`
@@ -39,7 +42,7 @@ function summarise(plans: DemoPlan[]) {
 
 async function main() {
   // Imported after the env tweaks above, so getDb() and the AI client see them.
-  const { getDb, schema } = await import('@/lib/db');
+  const { getDb, resetTestDb, schema } = await import('@/lib/db');
   const { transition } = await import('@/lib/workflow/transition');
   const { buildComplianceClocks } = await import('@/lib/workflow/clocks');
   const { SEED_USERS } = await import('@/lib/mock/connan');
@@ -50,7 +53,8 @@ async function main() {
   summarise(plans);
   if (DRY) return;
 
-  const db = await getDb();
+  const target = await getDb(); // DATABASE_URL, or local PGlite in .pgdata
+  const db = await resetTestDb(); // in-memory; transition() now uses this too
   const users = new Map(SEED_USERS.map((u) => [u.id, u]));
   const user = (id: string): User => {
     const u = users.get(id);
@@ -58,10 +62,6 @@ async function main() {
     return u;
   };
 
-  // ----- reset -----
-  await db.delete(schema.incidents); // reviews, acks, actions, clocks and events cascade
-  await db.execute(sql`ALTER SEQUENCE incident_id_seq RESTART WITH 1`);
-  console.log('Wiped existing incidents.');
 
   async function runCycle(id: string, plan: DemoPlan, c: PlanCycle) {
     const sup = user(plan.supervisorId);
@@ -196,6 +196,28 @@ async function main() {
     if (status !== plan.status) console.warn(`! ${id}: planned ${plan.status}, engine ended at ${status}`);
     if ((i + 1) % 25 === 0) console.log(`  ${i + 1}/${plans.length}`);
   }
+
+  // ----- copy to the real database -----
+  const [incidents, reviews, acks, actions, clocks, events] = await Promise.all([
+    db.select().from(schema.incidents),
+    db.select().from(schema.supervisorReviews),
+    db.select().from(schema.acknowledgements),
+    db.select().from(schema.followUpActions),
+    db.select().from(schema.complianceClocks),
+    db.select().from(schema.events),
+  ]);
+  const chunks = <T,>(xs: T[], n = 250) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+  await target.transaction(async (tx) => {
+    await tx.delete(schema.incidents); // reviews, acks, actions, clocks and events cascade
+    for (const c of chunks(incidents)) await tx.insert(schema.incidents).values(c);
+    for (const c of chunks(reviews)) await tx.insert(schema.supervisorReviews).values(c);
+    for (const c of chunks(acks)) await tx.insert(schema.acknowledgements).values(c);
+    for (const c of chunks(actions)) await tx.insert(schema.followUpActions).values(c);
+    for (const c of chunks(clocks)) await tx.insert(schema.complianceClocks).values(c);
+    for (const c of chunks(events)) await tx.insert(schema.events).values(c);
+    await tx.execute(sql`SELECT setval('incident_id_seq', ${incidents.length})`);
+  });
+  console.log(`Replaced all incidents in the target database (${incidents.length} incidents, ${events.length} events).`);
 
   console.log('Seeded by status:', actual);
   console.log(`Done: ${plans.length} fictional incidents.`);

@@ -23,10 +23,12 @@ The deployed app and your laptop share TigerData through the same `DATABASE_URL`
 
 ```bash
 # on a laptop, with .env.local pointing at the TigerData DATABASE_URL
-npm run seed      # or: npx tsx --env-file-if-exists=.env.local scripts/seed.ts
+npx tsx --env-file=.env.local scripts/seed.ts
 ```
 
-The seed writes directly to the database through Connan's workflow engine, so it doesn't need a running server. The Vercel site shows the same records as soon as it finishes. Re-running it wipes and reseeds incidents; users are kept.
+(`npm run seed` on its own does **not** read `.env.local`, so it seeds the local PGlite database instead.)
+
+The seed runs the workflow in memory, then copies the rows to the database in a few bulk inserts. It takes about 6 seconds against TigerData's free tier and doesn't need a running server. The Vercel site shows the same records as soon as it finishes. Re-running it wipes and reseeds incidents; users are kept.
 
 ## Function limits
 
