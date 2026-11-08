@@ -5,6 +5,7 @@ import { useReportDraft } from "@/components/form/useReportDraft";
 import { Field } from "@/components/form/Field";
 import { QUESTION_BY_ID } from "@/components/form/questions";
 import { missingRequired } from "@/components/form/logic";
+import { BackLink } from "@/components/form/BackLink";
 
 // /report/questions — one missing required question per screen, big buttons.
 export default function QuestionsPage() {
@@ -28,6 +29,7 @@ export default function QuestionsPage() {
 
   return (
     <main>
+      <BackLink href="/report/check" label="Back to all answers" />
       <p className="mb-4 text-sm text-slate-500">
         {1} of {total} to answer
       </p>

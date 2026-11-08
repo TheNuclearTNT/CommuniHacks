@@ -1,7 +1,7 @@
 "use client";
 
 import type { Answers, AnswerValue } from "@/lib/types";
-import { QUESTIONS, SECTIONS } from "./questions";
+import { QUESTIONS, SECTIONS, type Question } from "./questions";
 import { isVisible } from "./logic";
 import { Field } from "./Field";
 import { CompletenessBar } from "./CompletenessBar";
@@ -11,6 +11,9 @@ interface IncidentFormProps {
   onChange: (id: string, value: AnswerValue) => void;
   aiFilled?: Set<string>;
   invalidIds?: string[];
+  // Optional live/edited question set (from the portal form editor). When
+  // omitted, the baseline config is used.
+  questions?: Question[];
 }
 
 // The full 35-question form, grouped by section, with a completeness bar.
@@ -20,6 +23,7 @@ export function IncidentForm({
   onChange,
   aiFilled,
   invalidIds = [],
+  questions = QUESTIONS,
 }: IncidentFormProps) {
   const invalid = new Set(invalidIds);
 
@@ -27,7 +31,7 @@ export function IncidentForm({
     <div>
       <CompletenessBar answers={answers} />
       {SECTIONS.map((section) => {
-        const qs = QUESTIONS.filter(
+        const qs = questions.filter(
           (q) => q.section === section && isVisible(q, answers)
         );
         if (qs.length === 0) return null;

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { IncidentListItem, Status } from "@/lib/types";
 import { getIncidents } from "@/lib/api-client";
+import { BackLink } from "@/components/form/BackLink";
 
 const STATUS_LABEL: Record<Status, string> = {
   SUBMITTED: "Submitted",
@@ -43,6 +44,7 @@ export default function MyReportsPage() {
 
   return (
     <main>
+      <BackLink href="/" label="Back to home" />
       <h1 className="mb-6 text-2xl font-bold">My reports</h1>
 
       {error && <p className="text-warn">{error}</p>}

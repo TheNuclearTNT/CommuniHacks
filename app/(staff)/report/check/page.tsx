@@ -4,12 +4,15 @@ import { useRouter } from "next/navigation";
 import { useReportDraft } from "@/components/form/useReportDraft";
 import { IncidentForm } from "@/components/form/IncidentForm";
 import { missingRequired } from "@/components/form/logic";
+import { useLiveQuestions } from "@/components/form/useLiveConfig";
+import { BackLink } from "@/components/form/BackLink";
 
 // /report/check — the full form as tap-to-edit rows, AI-filled rows flagged.
 // This is also the manual entry point (works with voice/AI off).
 export default function CheckPage() {
   const router = useRouter();
   const { answers, setAnswer, aiFilled, hydrated } = useReportDraft();
+  const questions = useLiveQuestions();
 
   if (!hydrated) return null;
 
@@ -25,13 +28,19 @@ export default function CheckPage() {
 
   return (
     <main>
+      <BackLink href="/report" label="Back to start" />
       <h1 className="mb-1 text-2xl font-bold">Check the answers</h1>
       <p className="mb-6 text-slate-500">
         Tap any answer to change it. Rows marked “AI-filled” are our best guess —
         please check them.
       </p>
 
-      <IncidentForm answers={answers} onChange={setAnswer} aiFilled={aiFilled} />
+      <IncidentForm
+        answers={answers}
+        onChange={setAnswer}
+        aiFilled={aiFilled}
+        questions={questions}
+      />
 
       <button
         type="button"

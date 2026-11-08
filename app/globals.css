@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
+/* Light theme only. The app is a clinical tool; a dark scheme made several
+   screens black-on-black, so we pin a light palette and do NOT follow the OS
+   dark-mode preference. */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a; /* slate-900 */
 }
 
 @theme inline {
@@ -12,21 +15,18 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Staff intake (Mathew) — calm, clinical palette: one blue accent,
-   red only for Critical, amber for warnings/overdue. */
+/* Make `dark:` utilities opt-in via a `.dark` class on an ancestor, not the OS
+   setting. We never add that class, so dark variants stay off everywhere. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Calm, clinical palette: one blue accent, red only for Critical,
+   amber for warnings/overdue. */
 @theme {
   --color-accent: #1d4ed8;
   --color-accent-light: #eff6ff;
   --color-critical: #dc2626;
   --color-warn: #d97706;
   --container-staff: 480px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {

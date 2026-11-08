@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useReportDraft } from "@/components/form/useReportDraft";
 import { transcribeIntake, extractIntake } from "@/lib/api-client";
+import { BackLink } from "@/components/form/BackLink";
 
 const EXAMPLE =
   "Say what happened, where, when, who was involved and what you did right away.";
@@ -100,6 +101,7 @@ export default function DescribePage() {
 
   return (
     <main>
+      <BackLink href="/report" label="Back to start" />
       <h1 className="mb-1 text-2xl font-bold">Tell us what happened</h1>
       <p className="mb-6 text-slate-500">{EXAMPLE}</p>
 
