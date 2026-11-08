@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, EmptyState, SeverityDot, StatusPill, TypeChip } from '@/components/ui';
 import { getIncident, openIncident, reviewIncident } from '@/lib/api-client';
 import { getNeelMockIncident } from '@/lib/mock/neel';
+import { SimilarIncidents } from '@/components/review/SimilarIncidents';
 import {
   formatAnswerValue,
   getQuestionLabel,
@@ -282,6 +283,8 @@ export default function SupervisorReviewPage() {
               </div>
             ) : null}
           </Card>
+
+          <SimilarIncidents incidentId={detail.incident.id} />
 
           {/* AI Clinical Brief & Discrepancies */}
           {detail.incident.ai ? (

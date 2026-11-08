@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 
 // DEMO login for the supervisor / executive portal. Password is 123.
 // This is a demo gate only, not real access control.
-// Where to go after signing in (e.g. a status column clicked on the home
-// page). Only portal pages are allowed.
+// Where to go after signing in (a status column clicked on the home page, or
+// a reviewer page the proxy sent you here from). Only our own reviewer pages.
+const ALLOWED_NEXT = ["/portal/", "/supervisor", "/inbox", "/ea", "/records", "/dashboard", "/follow-ups", "/qr"];
 function nextPath(): string {
   const next = new URLSearchParams(window.location.search).get("next") ?? "";
-  return next.startsWith("/portal/") ? next : "/portal/responses";
+  const safe = next.startsWith("/") && !next.startsWith("//") && ALLOWED_NEXT.some((p) => next.startsWith(p));
+  return safe ? next : "/portal/responses";
 }
 
 export default function PortalLogin() {

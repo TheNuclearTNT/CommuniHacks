@@ -20,7 +20,9 @@ const NAV_LINKS: NavLinkItem[] = [
   { href: '/supervisor', label: 'Supervisor', matchPrefix: ['/supervisor'] },
   { href: '/inbox', label: 'Specialty inbox', matchPrefix: ['/inbox'] },
   { href: '/ea', label: 'EA filing', matchPrefix: ['/ea'] },
+  { href: '/follow-ups', label: 'Follow-ups', matchPrefix: ['/follow-ups'] },
   { href: '/dashboard', label: 'Trends', matchPrefix: ['/dashboard'] },
+  { href: '/qr', label: 'QR posters', matchPrefix: ['/qr'] },
   { href: '/portal/responses', label: 'Portal', matchPrefix: ['/portal'] },
 ];
 
@@ -87,7 +89,7 @@ export function AppHeader() {
   );
   if (staffMode) {
     return (
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md print:hidden">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
           <Link href="/" className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">L</div>
@@ -102,7 +104,7 @@ export function AppHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md print:hidden">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
         {/* Brand */}
         <div className="flex items-center gap-5">
