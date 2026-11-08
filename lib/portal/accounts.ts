@@ -1,15 +1,15 @@
-import {
-  createHmac,
-  randomBytes,
-  scryptSync,
-  timingSafeEqual,
-} from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { getDb } from "@/lib/db";
 import { SEED_USERS } from "@/lib/mock/connan";
 import type { Role } from "@/lib/types";
 import { rowsOf } from "./rows";
+import { SESSION_COOKIE, makeSessionValue, readSessionValue } from "./session";
+
+// The cookie signing lives in ./session (no database needed, so proxy.ts can
+// use it too). Re-exported so existing imports keep working.
+export { SESSION_COOKIE, makeSessionValue };
 
 // Per-person logins for the supervisor / executive portal.
 //
@@ -17,7 +17,6 @@ import { rowsOf } from "./rows";
 // stored hashed (scrypt), and the session cookie is signed so it cannot be
 // forged, but this is still a prototype gate, not production authentication.
 
-export const SESSION_COOKIE = "portal_session";
 export const ADMIN_ID = "admin";
 const DEMO_PASSWORD = "123";
 
@@ -199,35 +198,6 @@ export async function updateAccount(
 }
 
 // --- signed session cookie -------------------------------------------------
-
-function secret(): string {
-  return (
-    process.env.PORTAL_SESSION_SECRET?.trim() ||
-    process.env.DATABASE_URL?.trim() ||
-    "langs-demo-secret"
-  );
-}
-
-function sign(id: string): string {
-  return createHmac("sha256", secret()).update(id).digest("base64url");
-}
-
-export function makeSessionValue(id: string): string {
-  return `${id}.${sign(id)}`;
-}
-
-function readSessionValue(value: string | undefined): string | null {
-  if (!value) return null;
-  const dot = value.lastIndexOf(".");
-  if (dot < 1) return null;
-  const id = value.slice(0, dot);
-  const given = Buffer.from(value.slice(dot + 1));
-  const expected = Buffer.from(sign(id));
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
-    return null;
-  }
-  return id;
-}
 
 /** The signed-in account for this request, or null. Always re-read from the DB. */
 export async function getSession(): Promise<PortalAccount | null> {

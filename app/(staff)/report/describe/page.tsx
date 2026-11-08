@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import type { Answers } from "@/lib/types";
 import { useReportDraft } from "@/components/form/useReportDraft";
@@ -103,6 +103,10 @@ interface Snapshot {
 // ElevenLabs when a key is set, otherwise on screen), the reporter speaks or
 // types, and the AI decides which of the 35 questions actually matter for this
 // incident. It never asks irrelevant branches (e.g. injury on an IT issue).
+// The ?site= a QR poster put in the link (read on the client only).
+const subscribeNothing = () => () => {};
+const readSiteParam = () => new URLSearchParams(window.location.search).get("site") ?? "";
+
 export default function DescribePage() {
   const router = useRouter();
   const {
@@ -117,6 +121,13 @@ export default function DescribePage() {
     hydrated,
     restoreDraft,
   } = useReportDraft();
+
+  // Opened from a site's QR poster (?site=…): the location is already known.
+  const qrSite = useSyncExternalStore(subscribeNothing, readSiteParam, () => "");
+  useEffect(() => {
+    if (!hydrated || !qrSite || answers.q5) return;
+    if (QUESTION_BY_ID.q5?.options?.includes(qrSite)) setAnswer("q5", qrSite);
+  }, [hydrated, qrSite, answers.q5, setAnswer]);
 
   // The reporter is whoever is signed in, so the assistant never has to ask.
   useEffect(() => {
@@ -428,6 +439,12 @@ export default function DescribePage() {
       </p>
 
       <AnonymousToggle anonymous={anonymous} onChange={chooseAnonymous} />
+
+      {qrSite && answers.q5 === qrSite && (
+        <p className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          Reporting from <strong>{qrSite}</strong> (from the QR code).
+        </p>
+      )}
 
       {/* Voice controls: the assistant reads its questions aloud (ElevenLabs) */}
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" aria-label="Voice controls">
@@ -749,7 +766,7 @@ export default function DescribePage() {
         <button
           type="button"
           onClick={() => router.push("/report/check")}
-          className="text-sm text-slate-500 underline"
+          className="inline-block min-h-11 px-3 py-3 text-sm text-slate-500 underline"
         >
           Skip the conversation and fill the form myself
         </button>

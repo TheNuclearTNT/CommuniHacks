@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 // Supervisor / executive sign in. Each person has their own name + password.
 // Demo-grade: every account starts with the password 123 (see README).
-// Where to go after signing in (e.g. a status column clicked on the home
-// page). Only portal pages are allowed.
+// Where to go after signing in (a status column clicked on the home page, or
+// a reviewer page the proxy sent you here from). Only our own reviewer pages.
+const ALLOWED_NEXT = ["/portal/", "/supervisor", "/inbox", "/ea", "/records", "/dashboard", "/follow-ups", "/qr"];
 function nextPath(): string {
   const next = new URLSearchParams(window.location.search).get("next") ?? "";
-  return next.startsWith("/portal/") ? next : "/portal/responses";
+  const safe = next.startsWith("/") && !next.startsWith("//") && ALLOWED_NEXT.some((p) => next.startsWith(p));
+  return safe ? next : "/portal/responses";
 }
 
 export default function PortalLogin() {
@@ -72,6 +75,15 @@ export default function PortalLogin() {
         >
           ← Back to home
         </Link>
+
+        <Image
+          src="/langs-logo.png"
+          alt="Langs: Community. Health. Wellness."
+          width={504}
+          height={208}
+          priority
+          className="mb-4 h-14 w-auto"
+        />
 
         <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-blue-700">
           Supervisor &amp; Leadership Portal

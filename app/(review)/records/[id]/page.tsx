@@ -34,6 +34,7 @@ import {
   getUserDisplayName,
   SECTION_DISPLAY_NAMES,
 } from '@/lib/question-labels';
+import { canConfirmReceipt } from '@/lib/workflow/receipt-roles';
 import { deriveTypes, extractLocation } from '@/lib/workflow/rules';
 import type { FollowUpAction, IncidentDetail, Role } from '@/lib/types';
 
@@ -64,7 +65,7 @@ export default function RecordDetailPage() {
     if (!id) return;
     try {
       const [me, loaded] = await Promise.all([
-        getMe().catch(() => ({ id: 'u-bill', name: 'Bill Teasdale', role: 'SUPERVISOR' as Role })),
+        getMe().catch(() => ({ id: 'u_sup_1', name: 'Jordan Reyes', role: 'SUPERVISOR' as Role })),
         getIncident(id).catch(() => getNeelMockIncident(id) ?? null),
       ]);
       setViewerRole(me.role);
@@ -143,7 +144,6 @@ export default function RecordDetailPage() {
   const pendingAckForViewer = activeAcks.find(
     (a) => a.role === viewerRole && !a.ackedAt,
   );
-  const anyPendingAck = activeAcks.find((a) => !a.ackedAt);
 
   const handleAcknowledge = async (ackIdToUse: string, roleLabelToUse: Role) => {
     setBusyAction(true);
@@ -170,11 +170,11 @@ export default function RecordDetailPage() {
     setFeedbackMsg(null);
     try {
       await receiveIncident(incident.id);
-      setFeedbackMsg('Record received and filed.');
+      setFeedbackMsg('Record received and filed. It is now under Completed receipts and files on the EA filing page.');
       await loadRecord();
     } catch (err) {
       setFeedbackMsg(
-        err instanceof Error ? err.message : 'Switch to Claire Beaumont (Executive Assistant) in the top bar to file.',
+        err instanceof Error ? err.message : 'Only executives can confirm receipt and file.',
       );
     } finally {
       setBusyAction(false);
@@ -217,7 +217,29 @@ export default function RecordDetailPage() {
     }
   };
 
-  const targetAck = pendingAckForViewer ?? anyPendingAck;
+  // Only the specialty area itself can acknowledge (the backend refuses anyone else).
+  const targetAck = pendingAckForViewer;
+
+  // Reviewers can nudge a specialty area whose acknowledgement is still waiting.
+  const waitingAcks = acknowledgements.filter((a) => a.cycle === incident.cycle && !a.ackedAt);
+  const canRemind =
+    incident.status === 'SPECIALTY_REVIEW' &&
+    (viewerRole === 'SUPERVISOR' || viewerRole === 'EXEC_ASSISTANT' || viewerRole === 'EXECUTIVE');
+  const handleRemind = async (role: Role) => {
+    setFeedbackMsg(null);
+    try {
+      const res = await fetch(`/api/incidents/${encodeURIComponent(incident.id)}/remind`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ toRole: role, about: 'Acknowledgement waiting' }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      setFeedbackMsg(`Reminder logged for ${getRoleLabel(role)} (prototype: no email is sent).`);
+      await loadRecord();
+    } catch {
+      setFeedbackMsg('Could not send the reminder. Try again.');
+    }
+  };
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
@@ -254,7 +276,16 @@ export default function RecordDetailPage() {
         </div>
 
         {/* Sticky Role-Aware Action Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 print:hidden">
+          <Button variant="secondary" onClick={() => window.print()}>
+            Save as PDF
+          </Button>
+          {canRemind &&
+            waitingAcks.map((ack) => (
+              <Button key={ack.id} variant="secondary" onClick={() => handleRemind(ack.role)}>
+                Remind {getRoleLabel(ack.role)}
+              </Button>
+            ))}
           {['SUBMITTED', 'REOPENED', 'SUPERVISOR_REVIEW'].includes(incident.status) && (
             <Link
               href={`/supervisor/review/${incident.id}`}
@@ -285,17 +316,18 @@ export default function RecordDetailPage() {
             </div>
           )}
 
-          {incident.status === 'WITH_EA' && (
+          {incident.status === 'WITH_EA' && canConfirmReceipt(viewerRole) && (
             <Button
               variant="primary"
               disabled={busyAction}
               onClick={handleReceive}
             >
-              {busyAction ? 'Filing…' : 'Confirm EA Receipt & File'}
+              {busyAction ? 'Filing…' : 'Confirm receipt & file'}
             </Button>
           )}
 
-          {incident.status === 'CLOSED' && (
+          {incident.status === 'CLOSED' &&
+            (viewerRole === 'SUPERVISOR' || viewerRole === 'EXEC_ASSISTANT') && (
             <Button
               variant="secondary"
               onClick={() => setShowReopenBox((v) => !v)}

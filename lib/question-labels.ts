@@ -1,4 +1,5 @@
 import questionsConfig from '@/config/questions.json';
+import { SEED_USERS } from '@/lib/mock/connan';
 import type { Role, Status } from '@/lib/types';
 
 export interface QuestionConfigItem {
@@ -77,20 +78,11 @@ export function getClockLabel(kind: string): string {
   return CLOCK_LABELS[kind] ?? kind;
 }
 
-export const USER_DISPLAY_NAMES: Record<string, string> = {
-  'u-maya': 'Maya Chen (Staff — Main Site)',
-  'u-jordan': 'Jordan Singh (Staff — Grow)',
-  'u-sam': 'Sam Okafor (Staff — Hub)',
-  'u-bill': 'Bill Teasdale (Supervisor — Main)',
-  'u-nadia': 'Nadia Kowalski (Supervisor — Grow)',
-  'u-priya': 'Priya Nair (Privacy Officer)',
-  'u-carlos': 'Carlos Mendez (JOHSC Co-Chair)',
-  'u-derek': 'Derek Wu (IT & Facilities Lead)',
-  'u-helen': 'Helen Park (Director of Operations)',
-  'u-cid': 'Dr. Amara Osei (CID Group Lead)',
-  'u-claire': 'Claire Beaumont (Executive Assistant)',
-  'u-exec': 'sharlene@langs.org (Executive Director)',
-};
+// Display names for the seeded (fictional) users, from the same list the
+// database is seeded with, so record pages show names rather than ids.
+export const USER_DISPLAY_NAMES: Record<string, string> = Object.fromEntries(
+  SEED_USERS.map((u) => [u.id, `${u.name} (${getRoleLabel(u.role)})`]),
+);
 
 export function getUserDisplayName(userId?: string | null): string {
   if (!userId) return 'Unassigned';

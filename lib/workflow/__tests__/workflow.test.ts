@@ -438,6 +438,72 @@ describe('State machine transitions & Langs Scenarios 1–3 + Reopen (B5 & B11)'
     expect(created.ai?.summaryBullets).toEqual([]);
   });
 
+  // Walks one record to WITH_EA (everything done except the final receipt).
+  async function recordWaitingForReceipt() {
+    const created = await submitNewIncident(userByRole('STAFF'), {
+      answers: {
+        q1: '2026-11-07',
+        q2: '9:00AM',
+        q3: 'Riley Chen',
+        q5: 'Main Site',
+        q13: 'Less Serious',
+        q14: 'No',
+        q16: 'No',
+        q18: 'Yes',
+        q19: ['Privacy/Confidentiality'],
+        q32: 'Accidentally emailed a fictional schedule to the wrong external address.',
+        q35: 'u_sup_1',
+      },
+      footageHoldRequested: false,
+    });
+    const reviewed = await transition(created.id, 'review', userByRole('SUPERVISOR'), {
+      confirmedTypes: ['PRIVACY'],
+      severity: 'Less Serious',
+      seriousBehavioural: false,
+      healthCareBeyondFirstAid: false,
+      lostTime: false,
+      criticalInjury: false,
+      correctiveActions: [],
+      footageHold: false,
+      notes: 'Routing to Privacy Officer.',
+    });
+    const acked = await transition(created.id, 'ack', userByRole('PRIVACY_OFFICER'), {
+      ackId: reviewed.acknowledgements[0].id,
+    });
+    expect(acked.incident.status).toBe('WITH_EA');
+    return created.id;
+  }
+
+  it('only executives can confirm receipt and file: every other role gets 403 and the record stays open', async () => {
+    const id = await recordWaitingForReceipt();
+
+    for (const role of [
+      'STAFF',
+      'SUPERVISOR',
+      'PRIVACY_OFFICER',
+      'JOHSC_CHAIR',
+      'IT_FACILITIES',
+      'DIRECTOR_OPS',
+      'CID_GROUP',
+    ]) {
+      await expect(transition(id, 'receive', userByRole(role))).rejects.toMatchObject({
+        status: 403,
+      });
+    }
+
+    // Still waiting: nobody got through.
+    const stillOpen = await transition(id, 'receive', userByRole('EXEC_ASSISTANT'));
+    expect(stillOpen.incident.status).toBe('CLOSED'); // the EA can, which proves it was open
+  });
+
+  it('an Executive (and so the ADMIN login, which acts as one) can confirm receipt and file', async () => {
+    const id = await recordWaitingForReceipt();
+    const closed = await transition(id, 'receive', userByRole('EXECUTIVE'));
+    expect(closed.incident.status).toBe('CLOSED');
+    expect(closed.incident.closedAt).toBeTruthy();
+    expect(closed.events.at(-1)?.actorId).toBe(userByRole('EXECUTIVE').id);
+  });
+
   it('supports back-dated seed timestamps across submit, review, ack, and receive', async () => {
     const staff = userByRole('STAFF');
     const supervisor = userByRole('SUPERVISOR');

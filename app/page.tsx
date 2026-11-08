@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { Badge } from '@/components/ui';
 
@@ -10,6 +11,14 @@ export default function HomePage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 md:py-12">
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs md:p-10">
+        <Image
+          src="/langs-logo.png"
+          alt="Langs: Community. Health. Wellness."
+          width={504}
+          height={208}
+          priority
+          className="mb-5 h-20 w-auto md:h-24"
+        />
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="blue">Langs Community Health Centre</Badge>
           <span className="text-xs font-medium text-slate-500">

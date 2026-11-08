@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { analyseIncident } from '@/lib/ai/gemini';
 import { getDb, nextIncidentId, schema, type AppDatabase } from '@/lib/db';
 import { resolveSupervisorId } from '@/lib/mock/connan';
+import { canConfirmReceipt } from './receipt-roles';
 import type {
   Acknowledgement,
   Answers,
@@ -733,9 +734,9 @@ export async function transition(
     }
 
     if (action === 'receive') {
-      if (actor.role !== 'EXEC_ASSISTANT') {
+      if (!canConfirmReceipt(actor.role)) {
         throw new WorkflowError(
-          `Role ${actor.role} is not permitted to confirm final receipt (requires EXEC_ASSISTANT)`,
+          `Role ${actor.role} is not permitted to confirm final receipt (executives only: requires EXEC_ASSISTANT or EXECUTIVE)`,
           403,
         );
       }
