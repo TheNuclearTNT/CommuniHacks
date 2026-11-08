@@ -13,6 +13,12 @@ import type {
 import { QUESTIONS, QUESTION_BY_ID } from "@/components/form/questions";
 import { missingRequired } from "@/components/form/logic";
 import { mockExtract, mockFollowUpText } from "@/lib/mock/mathew";
+import {
+  deriveBranches,
+  relevantMissingRequired,
+  relevantQuestionIds,
+  type Branch,
+} from "@/lib/ai/relevance";
 
 // Priority order for which missing-required question to ask next (B5).
 const FOLLOW_UP_PRIORITY = [
@@ -166,4 +172,134 @@ async function callGemini(req: IntakeExtractRequest): Promise<Answers> {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive conversational intake
+// ---------------------------------------------------------------------------
+// One turn of the "Tell us what happened" conversation. The reporter speaks or
+// types; we extract answers, decide which incident branches are relevant, and
+// either ask the single most useful next question (relevant branch only) or
+// finish. If the reporter's story is too thin to tell what happened, we say so
+// and ask them to add detail rather than guessing.
+
+export interface ConverseRequest {
+  // Everything the reporter has said so far, joined (newest last).
+  transcript: string;
+  // Answers gathered so far.
+  answers: Answers;
+}
+
+export interface ConverseResponse {
+  answers: Answers; // merged
+  // Which branches the AI judged relevant (for display / debugging).
+  branches: Branch[];
+  // What to do next.
+  next:
+    | { kind: "ask"; questionId: string; question: string }
+    | { kind: "need_more"; question: string } // story too thin
+    | { kind: "done" };
+  relevantMissing: string[]; // relevant required ids still empty
+  mock: boolean;
+}
+
+// Priority for asking the next relevant question.
+const CONVERSE_PRIORITY = [
+  "q1", "q2", "q5", "q3", "q13", "q14", "q16", "q18",
+  "q9", "q11", "q10", "q35", "q32",
+];
+
+function orderByPriority(ids: string[]): string[] {
+  return [
+    ...CONVERSE_PRIORITY.filter((id) => ids.includes(id)),
+    ...ids.filter((id) => !CONVERSE_PRIORITY.includes(id)),
+  ];
+}
+
+// Is the story rich enough to act on? We need at least a sense of WHAT happened.
+function storyTooThin(transcript: string, answers: Answers): boolean {
+  const words = transcript.trim().split(/\s+/).filter(Boolean).length;
+  const hasNarrative =
+    typeof answers.q32 === "string" && answers.q32.trim().length > 0;
+  // Fewer than 4 words and no extracted narrative → ask them to say more.
+  return words < 4 && !hasNarrative;
+}
+
+export async function converseIntake(
+  req: ConverseRequest,
+): Promise<ConverseResponse> {
+  const useMock =
+    (process.env.USE_MOCK_AI ?? "true").toLowerCase() === "true";
+
+  // 1. Extract answers from the full story so far.
+  let extracted: Answers;
+  let mock = true;
+  if (useMock || !process.env.GEMINI_API_KEY) {
+    extracted = mockExtract(req.transcript, req.answers);
+    mock = true;
+  } else {
+    try {
+      extracted = await callGemini({
+        transcript: req.transcript,
+        answers: req.answers,
+      });
+      mock = false;
+    } catch (err) {
+      console.error("converse extract failed, using mock:", err);
+      extracted = mockExtract(req.transcript, req.answers);
+      mock = true;
+    }
+  }
+
+  const answers = mergeAnswers(req.answers, extracted);
+
+  // 2. Too thin to tell what happened? Ask for more before anything else.
+  if (storyTooThin(req.transcript, answers)) {
+    return {
+      answers,
+      branches: ["core"],
+      next: {
+        kind: "need_more",
+        question:
+          "I didn't catch enough to go on. Can you tell me what happened, where, and who was involved?",
+      },
+      relevantMissing: [],
+      mock,
+    };
+  }
+
+  // 3. Decide relevant branches (rules are the floor; always safe).
+  const branches = deriveBranches(answers);
+
+  // 4. Which relevant required questions are still empty?
+  const missing = relevantMissingRequired(answers, branches);
+
+  if (missing.length === 0) {
+    return {
+      answers,
+      branches: [...branches],
+      next: { kind: "done" },
+      relevantMissing: [],
+      mock,
+    };
+  }
+
+  // 5. Ask the most useful missing one, phrased conversationally.
+  const nextId = orderByPriority(missing)[0];
+  return {
+    answers,
+    branches: [...branches],
+    next: {
+      kind: "ask",
+      questionId: nextId,
+      question: conversationalPrompt(nextId),
+    },
+    relevantMissing: missing,
+    mock,
+  };
+}
+
+// Exposed so the UI can show which questions are in scope if it wants.
+export function relevantScope(answers: Answers): string[] {
+  return [...relevantQuestionIds(answers, deriveBranches(answers))];
 }
