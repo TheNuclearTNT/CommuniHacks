@@ -10,7 +10,7 @@ export function BackLink({ href, label = "Back" }: { href?: string; label?: stri
     <button
       type="button"
       onClick={() => (href ? router.push(href) : router.back())}
-      className="mb-4 inline-flex items-center text-sm text-accent hover:underline"
+      className="-ml-2 mb-2 inline-flex min-h-11 items-center rounded-lg px-2 text-sm text-accent hover:bg-blue-50 hover:underline"
     >
       ← {label}
     </button>

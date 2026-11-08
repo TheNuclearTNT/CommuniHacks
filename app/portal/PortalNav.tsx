@@ -7,6 +7,8 @@ const LINKS = [
   { href: "/portal/responses", label: "All Form Responses" },
   { href: "/portal/status", label: "Pathway Kanban Board" },
   { href: "/portal/trends", label: "Executive Trends" },
+  { href: "/follow-ups", label: "Follow-up Board" },
+  { href: "/qr", label: "QR Posters" },
   { href: "/portal/form-editor", label: "35-Question Form Editor" },
 ];
 

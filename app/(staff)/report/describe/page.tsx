@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import type { Answers } from "@/lib/types";
 import { useReportDraft } from "@/components/form/useReportDraft";
@@ -79,10 +79,21 @@ const DEMO_SCENARIOS = DEMO_STORIES.map((s) => ({ label: s.label, text: s.text }
 // ElevenLabs when a key is set, otherwise on screen), the reporter speaks or
 // types, and the AI decides which of the 35 questions actually matter for this
 // incident. It never asks irrelevant branches (e.g. injury on an IT issue).
+// The ?site= a QR poster put in the link (read on the client only).
+const subscribeNothing = () => () => {};
+const readSiteParam = () => new URLSearchParams(window.location.search).get("site") ?? "";
+
 export default function DescribePage() {
   const router = useRouter();
   const { answers, setAnswer, mergeAiAnswers, setTranscript, aiFilled, anonymous, setAnonymous, hydrated } =
     useReportDraft();
+
+  // Opened from a site's QR poster (?site=…): the location is already known.
+  const qrSite = useSyncExternalStore(subscribeNothing, readSiteParam, () => "");
+  useEffect(() => {
+    if (!hydrated || !qrSite || answers.q5) return;
+    if (QUESTION_BY_ID.q5?.options?.includes(qrSite)) setAnswer("q5", qrSite);
+  }, [hydrated, qrSite, answers.q5, setAnswer]);
 
   // The reporter is whoever is signed in, so the assistant never has to ask.
   useEffect(() => {
@@ -334,6 +345,12 @@ export default function DescribePage() {
 
       <AnonymousToggle anonymous={anonymous} onChange={chooseAnonymous} />
 
+      {qrSite && answers.q5 === qrSite && (
+        <p className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          Reporting from <strong>{qrSite}</strong> (from the QR code).
+        </p>
+      )}
+
       {/* Conversation */}
       <div className="mb-6 flex flex-col gap-3">
         {conversation.map((t, i) => (
@@ -581,7 +598,7 @@ export default function DescribePage() {
         <button
           type="button"
           onClick={() => router.push("/report/check")}
-          className="text-sm text-slate-500 underline"
+          className="inline-block min-h-11 px-3 py-3 text-sm text-slate-500 underline"
         >
           Skip the conversation and fill the form myself
         </button>
