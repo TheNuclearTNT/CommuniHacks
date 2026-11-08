@@ -4,6 +4,7 @@ import type {
   IncidentListItem,
   IntakeExtractResponse,
 } from "@/lib/types";
+import { parseDatePhrase, parseTimePhrase } from "@/lib/ai/parse-when";
 
 // Fictional supervisor list (A8), used for q35 + the "done" screen.
 export const SUPERVISORS: { id: string; name: string }[] = [
@@ -87,7 +88,12 @@ export function mockExtract(
   transcript: string,
   existing: Answers
 ): Answers {
+  // Offline / fallback extractor. It also runs when real Gemini fails mid-
+  // conversation (e.g. quota), so it must never add answers the story doesn't
+  // support: whole-word matches only, no canned narrative, no blanket "No"s.
   const t = transcript.toLowerCase();
+  const has = (...words: string[]) =>
+    words.some((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(t));
   const filled: Answers = {};
   const setIfEmpty = (id: `q${number}`, value: Answers[`q${number}`]) => {
     const cur = existing[id];
@@ -100,74 +106,79 @@ export function mockExtract(
   };
 
   // Location
-  if (t.includes("main site") || t.includes("main building")) {
-    setIfEmpty("q5", "Main Site");
-  } else if (t.includes("bishop")) {
-    setIfEmpty("q5", "Bishop St");
-  }
+  if (has("main site", "main building")) setIfEmpty("q5", "Main Site");
+  else if (has("bishop")) setIfEmpty("q5", "Bishop St");
+  else if (has("grow")) setIfEmpty("q5", "Grow Community Centre");
+  else if (has("north dumfries")) setIfEmpty("q5", "North Dumfries");
 
   // Reporting person
-  if (t.includes("riley")) {
-    setIfEmpty("q3", "Riley Chen");
-    setIfEmpty("q11", "Riley Chen");
-  }
+  if (has("riley")) setIfEmpty("q3", "Riley Chen");
 
-  // Who was impacted — staff, since Riley is staff and injured
-  if (t.includes("my hand") || t.includes("i put ice") || t.includes("back at work")) {
-    setIfEmpty("q9", "Staff/Volunteer");
-  }
+  // Who was impacted
+  if (has("visitor")) setIfEmpty("q9", "Visitor");
+  else if (has("my hand", "i put ice", "back at work")) setIfEmpty("q9", "Staff/Volunteer");
 
   // Witnesses
-  if (t.includes("priya")) setIfEmpty("q4", "Priya Nair witnessed the incident.");
+  if (has("priya")) setIfEmpty("q4", "Priya Nair witnessed the incident.");
 
   // Severity
-  if (t.includes("minor")) setIfEmpty("q13", "Less Serious");
+  if (has("minor")) setIfEmpty("q13", "Less Serious");
 
-  // Injury
-  if (
-    t.includes("pinch") ||
-    t.includes("cut my hand") ||
-    t.includes("hurt") ||
-    t.includes("injur")
-  ) {
+  // Injury — ignore "no one was hurt" / "not hurt"
+  const negatedHurt = /\b(no one|nobody|not|wasn't|was not|without)\b[^.]{0,20}\b(hurt|injured)\b/.test(t);
+  const injury = !negatedHurt && has("pinched", "pinch", "cut my hand", "hurt", "injured", "injury", "bruised", "slipped", "fell");
+  if (injury) {
     setIfEmpty("q14", "Yes");
-    setIfEmpty("q15", ["Impact (e.g. head injury, crushed finger etc.)"]);
+    if (has("slipped", "tripped", "fell")) setIfEmpty("q15", ["Slip/Trip/Fall"]);
+    else setIfEmpty("q15", ["Impact (e.g. head injury, crushed finger etc.)"]);
+  } else if (negatedHurt) {
+    setIfEmpty("q14", "No");
   }
 
-  // Behavioural / building — none implied here
-  setIfEmpty("q16", "No");
-  setIfEmpty("q18", "No");
+  // Privacy / building / IT
+  if (has("email", "emailed", "wrong recipient", "wrong address", "replied-all", "confidential", "privacy")) {
+    setIfEmpty("q18", "Yes");
+    setIfEmpty("q19", ["Privacy/Confidentiality"]);
+  } else if (has("phishing", "password", "virus", "hacked")) {
+    setIfEmpty("q18", "Yes");
+    setIfEmpty("q19", ["Cybersecurity"]);
+  } else if (has("handrail", "broken", "damage", "damaged", "leak", "stolen", "theft")) {
+    setIfEmpty("q18", "Yes");
+    setIfEmpty("q19", [has("stolen", "theft") ? "Theft" : "Property Damage"]);
+  }
 
-  // Emergency response — none
-  setIfEmpty("q20", "No");
-  setIfEmpty("q22", "No");
-  setIfEmpty("q23", "No");
-  setIfEmpty("q28", "No");
-  setIfEmpty("q30", "No");
+  // Behaviour
+  if (has("shouted", "yelled", "aggressive", "threatened", "harassed", "swore")) setIfEmpty("q16", "Yes");
+
+  // The Scenario 3 demo story is a plain injury: nothing behavioural or building-related.
+  if (injury && filled.q18 === undefined) setIfEmpty("q18", "No");
+  if (injury && filled.q16 === undefined) setIfEmpty("q16", "No");
+
+  // Emergency response — "No" only when the story mentions nothing of the kind.
+  if (!has("code", "911", "police", "ambulance", "paramedic", "paramedics", "fire", "panic", "emergency", "cas", "children's aid")) {
+    setIfEmpty("q20", "No");
+    setIfEmpty("q22", "No");
+    setIfEmpty("q23", "No");
+    setIfEmpty("q28", "No");
+    setIfEmpty("q30", "No");
+  }
 
   // Interventions
-  if (t.includes("first aid") || t.includes("ice")) {
-    setIfEmpty("q31", ["First Aid"]);
-  }
+  if (has("first aid", "ice", "ice pack")) setIfEmpty("q31", ["First Aid"]);
 
-  // Time: "2:15 today" -> 2:15PM
-  if (t.includes("2:15") || t.includes("2 15")) setIfEmpty("q2", "2:15PM");
+  // Date and time: "last night", "10th sept", "about 2:15 today", "10 pm"…
+  const when = parseDatePhrase(transcript);
+  if (when) setIfEmpty("q1", when);
+  const at = parseTimePhrase(transcript) ?? (t.includes("2 15") ? "2:15PM" : null);
+  if (at) setIfEmpty("q2", at);
 
-  // Date: "today"
-  if (t.includes("today")) {
-    setIfEmpty("q1", new Date().toISOString().slice(0, 10));
-  }
+  // Narrative (q32): the reporter's own words, not a canned story.
+  const story = transcript.replace(/^Type of incident \(chosen by reporter\):[^.]*\.\s*/, "").trim();
+  if (story) setIfEmpty("q32", story);
 
-  // Narrative (q32): neutral factual rewrite, no assumptions.
-  setIfEmpty(
-    "q32",
-    "A staff member was moving a sealed supply box in the storage room at " +
-      "Main Site and pinched a hand between the box and a shelf. A colleague " +
-      "witnessed the event. First aid was given on site."
-  );
-
-  // Supervisor default (Jordan gave first aid, so route to Jordan Reyes)
-  if (t.includes("jordan")) setIfEmpty("q35", "Jordan Reyes");
+  // Supervisor
+  if (has("jordan")) setIfEmpty("q35", "Jordan Reyes");
+  else if (has("morgan")) setIfEmpty("q35", "Morgan Blake");
 
   return filled;
 }

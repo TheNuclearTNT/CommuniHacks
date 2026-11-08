@@ -13,6 +13,7 @@ import {
   MOCK_INSIGHTS,
 } from '@/lib/mock/connan';
 import { deriveTypes } from '@/lib/workflow/rules';
+import { demoAnalysis } from '@/lib/ai/demo-fixtures';
 
 const INCIDENT_TYPE_ENUM = [
   'PRIVACY',
@@ -214,6 +215,10 @@ export async function analyseIncident(
   answers: Answers,
   transcript?: string,
 ): Promise<AiAnalysis> {
+  // Demo stories have a pre-written summary: no Gemini call (saves quota).
+  const demo = demoAnalysis(answers, transcript);
+  if (demo) return demo;
+
   if (isMockAiEnabled()) {
     return buildMockAiAnalysis(answers, transcript, true);
   }
@@ -458,6 +463,26 @@ export async function generateExecutiveInsights(
     return computeDeterministicInsights(aggregatesPayload, true);
   }
 
+  // The briefing only changes when the records do: reuse it for 10 minutes
+  // instead of calling Gemini on every dashboard load.
+  const cacheKey = JSON.stringify(aggregatesPayload);
+  const cached = insightsCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < 10 * 60_000) return cached.value;
+
+  const result = await generateExecutiveInsightsUncached(aggregatesPayload, allowedSet);
+  if (!result.mock) {
+    if (insightsCache.size > 50) insightsCache.clear();
+    insightsCache.set(cacheKey, { at: Date.now(), value: result });
+  }
+  return result;
+}
+
+const insightsCache = new Map<string, { at: number; value: InsightsResponse }>();
+
+async function generateExecutiveInsightsUncached(
+  aggregatesPayload: ExecutiveAggregatesPayload,
+  allowedSet: Set<string>,
+): Promise<InsightsResponse> {
   try {
     const prompt = [
       'You are an executive quality & safety analyst for Langs Community Health Centre.',

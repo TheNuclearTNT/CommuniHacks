@@ -13,6 +13,8 @@ import type {
 import { QUESTIONS, QUESTION_BY_ID } from "@/components/form/questions";
 import { missingRequired } from "@/components/form/logic";
 import { mockExtract, mockFollowUpText } from "@/lib/mock/mathew";
+import { matchDemoStory } from "@/lib/ai/demo-fixtures";
+import { parseDatePhrase, parseTimePhrase } from "@/lib/ai/parse-when";
 import {
   deriveBranches,
   relevantMissingRequired,
@@ -70,24 +72,34 @@ function conversationalPrompt(id: string): string {
 function buildSchema() {
   const properties: Record<string, unknown> = {};
   for (const q of QUESTIONS) {
+    // The question text tells the model what each q-id means.
+    const description = q.help ? `${q.label} (${q.help})` : q.label;
     if (q.type === "single" && q.options) {
-      properties[q.id] = { type: "string", enum: [...q.options, ""] };
+      // Gemini rejects empty enum values; unknown answers are simply left out.
+      properties[q.id] = { type: "string", description, enum: q.options, nullable: true };
     } else if (q.type === "multi" && q.options) {
       properties[q.id] = {
         type: "array",
+        description,
         items: { type: "string", enum: q.options },
+        nullable: true,
       };
     } else {
-      properties[q.id] = { type: "string" };
+      properties[q.id] = { type: "string", description, nullable: true };
     }
   }
-  return { type: "object", properties };
+  // Every field required-but-nullable: with all-optional fields Gemini fills
+  // only two or three answers and stops.
+  return { type: "object", properties, required: QUESTIONS.map((q) => q.id) };
 }
 
 const SYSTEM_INSTRUCTION = [
   "You map a spoken incident narrative onto a fixed health-centre form.",
-  "Fill only what the speaker actually said or clearly implied. Never invent.",
-  "If something is unknown, leave it out (null).",
+  "Answer every question the narrative states or clearly implies, including",
+  "yes/no questions (e.g. someone was hurt -> injury involved = Yes; an email",
+  "sent to the wrong person -> confidentiality involved = Yes). Never invent",
+  "facts the narrative does not support; use null for those.",
+  "Always fill q32.",
   "Map loose speech to the exact option text provided in the schema enums.",
   "For the free-text narrative field q32, write a factual, first-person-neutral",
   "rewrite with NO assumptions or opinions.",
@@ -107,12 +119,16 @@ export async function extractIntake(
   let extracted: Answers;
   let mock = true;
 
-  if (useMock || !process.env.GEMINI_API_KEY) {
+  const demo = matchDemoStory(req.transcript);
+  if (demo) {
+    // Pre-written answers for the demo stories: no Gemini call.
+    extracted = demo.answers();
+  } else if (useMock || !process.env.GEMINI_API_KEY) {
     extracted = mockExtract(req.transcript, req.answers);
     mock = true;
   } else {
     try {
-      extracted = await callGemini(req);
+      extracted = await callGeminiCached(req);
       mock = false;
     } catch (err) {
       // Any AI failure falls back to deterministic rules — demo never breaks.
@@ -129,14 +145,29 @@ export async function extractIntake(
   return { answers, missingRequired: missing, followUp, mock };
 }
 
+// Same story → same answers: don't spend quota twice (per server instance).
+const extractCache = new Map<string, Answers>();
+async function callGeminiCached(req: IntakeExtractRequest): Promise<Answers> {
+  const key = req.transcript.trim().toLowerCase();
+  const hit = extractCache.get(key);
+  if (hit) return hit;
+  const out = await callGemini(req);
+  if (extractCache.size > 200) extractCache.clear();
+  extractCache.set(key, out);
+  return out;
+}
+
 /** Real Gemini call. Structured JSON output constrained by the form schema. */
 async function callGemini(req: IntakeExtractRequest): Promise<Answers> {
   const { GoogleGenAI } = await import("@google/genai");
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
   const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
+  // Langs is in Ontario; "today" / "this morning" / "yesterday" resolve against this.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
   const prompt = [
     SYSTEM_INSTRUCTION,
+    `Today's date is ${today} (YYYY-MM-DD, Ontario time). Use it to fill q1 when the reporter says "today", "this morning", "yesterday" and so on. Write q2 like 9:40AM.`,
     "",
     "Answers already provided (do NOT overwrite non-empty ones):",
     JSON.stringify(req.answers),
@@ -188,6 +219,11 @@ export interface ConverseRequest {
   transcript: string;
   // Answers gathered so far.
   answers: Answers;
+  // True when the latest reply already went straight into `answers` (a tapped
+  // option or a reply to a free-text question): nothing new for the AI to read.
+  skipExtraction?: boolean;
+  // Questions the reporter tapped "Skip" on; they fill them in on review.
+  skipIds?: string[];
 }
 
 export interface ConverseResponse {
@@ -234,12 +270,19 @@ export async function converseIntake(
   // 1. Extract answers from the full story so far.
   let extracted: Answers;
   let mock = true;
-  if (useMock || !process.env.GEMINI_API_KEY) {
+  const demo = matchDemoStory(req.transcript);
+  if (req.skipExtraction) {
+    // Saves a Gemini call per question: the answer is already in place.
+    extracted = {};
+  } else if (demo) {
+    // Pre-written answers for the demo stories: no Gemini call.
+    extracted = demo.answers();
+  } else if (useMock || !process.env.GEMINI_API_KEY) {
     extracted = mockExtract(req.transcript, req.answers);
     mock = true;
   } else {
     try {
-      extracted = await callGemini({
+      extracted = await callGeminiCached({
         transcript: req.transcript,
         answers: req.answers,
       });
@@ -252,6 +295,16 @@ export async function converseIntake(
   }
 
   const answers = mergeAnswers(req.answers, extracted);
+  // Safety net: plain date/time phrases ("last night", "10th sept", "10 pm")
+  // never depend on the AI, so the date question can't loop.
+  if (isEmptyVal(answers.q1)) {
+    const when = parseDatePhrase(req.transcript);
+    if (when) answers.q1 = when;
+  }
+  if (isEmptyVal(answers.q2)) {
+    const at = parseTimePhrase(req.transcript);
+    if (at) answers.q2 = at;
+  }
 
   // 2. Too thin to tell what happened? Ask for more before anything else.
   if (storyTooThin(req.transcript, answers)) {
@@ -272,7 +325,9 @@ export async function converseIntake(
   const branches = deriveBranches(answers);
 
   // 4. Which relevant required questions are still empty?
-  const missing = relevantMissingRequired(answers, branches);
+  // Questions the reporter chose to skip are left for the review page.
+  const skipped = new Set(req.skipIds ?? []);
+  const missing = relevantMissingRequired(answers, branches).filter((id) => !skipped.has(id));
 
   if (missing.length === 0) {
     return {
