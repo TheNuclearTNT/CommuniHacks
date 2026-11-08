@@ -6,7 +6,7 @@ import { SITES } from '@/lib/mock/ananya';
 import { AiBriefing } from '@/components/charts/AiBriefing';
 import { ChartSkeleton } from '@/components/charts/ChartCard';
 import { Heatmap } from '@/components/charts/Heatmap';
-import { DemoDataTag } from '@/components/charts/LocalTags';
+import { DemoDataTag } from '@/components/charts/DemoDataTag';
 import { MetricCards } from '@/components/charts/MetricCards';
 import { SiteBarChart } from '@/components/charts/SiteBarChart';
 import { StageDurationChart } from '@/components/charts/StageDurationChart';

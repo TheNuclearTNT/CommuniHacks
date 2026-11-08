@@ -1,5 +1,5 @@
 import type { TrendsResponse } from '@/lib/types';
-import { ToConfirmTag } from './LocalTags';
+import { ToConfirmTag } from '@/components/ui';
 
 function Card({ label, value, sub, tone = 'normal', extra }: { label: string; value: string; sub?: string; tone?: 'normal' | 'alert'; extra?: React.ReactNode }) {
   const alert = tone === 'alert';
@@ -31,7 +31,11 @@ export function MetricCards({ totals }: { totals: TrendsResponse['totals'] }) {
         value={String(totals.overdueClocks)}
         tone={totals.overdueClocks > 0 ? 'alert' : 'normal'}
         sub={totals.overdueClocks > 0 ? 'Past the reporting deadline' : 'None past deadline'}
-        extra={<ToConfirmTag label="Prototype guidance — Langs to confirm" />}
+        extra={
+          <span className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+            Prototype guidance <ToConfirmTag />
+          </span>
+        }
       />
       <Card label="Reopened rate" value={pct(totals.reopenedRate)} sub="Of records in this range" />
     </div>

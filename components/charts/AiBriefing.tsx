@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { InsightsResponse } from '@/lib/types';
-import { AiLabel } from './LocalTags';
+import { AiLabel } from '@/components/ui';
 
 const recordHref = (id: string) => `/records/${encodeURIComponent(id)}`;
 
