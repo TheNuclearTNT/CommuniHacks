@@ -1,16 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 // DEMO login for the supervisor / executive portal. Password is 123.
 // This is a demo gate only, not real access control.
+// Where to go after signing in (e.g. a status column clicked on the home
+// page). Only portal pages are allowed.
+function nextPath(): string {
+  const next = new URLSearchParams(window.location.search).get("next") ?? "";
+  return next.startsWith("/portal/") ? next : "/portal/responses";
+}
+
 export default function PortalLogin() {
   const router = useRouter();
   const [password, setPassword] = useState("123");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Already signed in: go straight there.
+  useEffect(() => {
+    if (document.cookie.split("; ").includes("portal=1")) {
+      router.replace(nextPath());
+    }
+  }, [router]);
 
   const doSignIn = async (pwd: string) => {
     setBusy(true);
@@ -26,7 +40,7 @@ export default function PortalLogin() {
         setBusy(false);
         return;
       }
-      router.push("/portal/responses");
+      router.push(nextPath());
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");

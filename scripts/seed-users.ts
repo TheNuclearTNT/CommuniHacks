@@ -6,7 +6,7 @@ async function main() {
   const db = await getDb();
   await seedBaseUsers(db);
   await seedDemoIncidentsIfEmpty(db);
-  console.log(`Seeded ${SEED_USERS.length} fictional Langs SafeReport users:`);
+  console.log(`Seeded ${SEED_USERS.length} fictional Langs Line users:`);
   for (const u of SEED_USERS) {
     console.log(`  - ${u.id.padEnd(10)} | ${u.role.padEnd(16)} | ${u.name} (${u.site})`);
   }

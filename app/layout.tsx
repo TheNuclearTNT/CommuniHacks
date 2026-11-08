@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Langs SafeReport · Incident Reporting & Pathway Management",
+  title: "Langs Line · Incident Reporting & Pathway Management",
   description:
     "Clinical incident intake, supervisor triage, parallel specialty acknowledgement, and executive trend insights for Langs Community Health Centre.",
 };

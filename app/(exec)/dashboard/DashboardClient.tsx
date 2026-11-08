@@ -10,6 +10,7 @@ import { DemoDataTag } from '@/components/charts/DemoDataTag';
 import { MetricCards } from '@/components/charts/MetricCards';
 import { SiteBarChart } from '@/components/charts/SiteBarChart';
 import { StageDurationChart } from '@/components/charts/StageDurationChart';
+import { TypeShareChart } from '@/components/charts/TypeShareChart';
 import { WeeklyTypeChart } from '@/components/charts/WeeklyTypeChart';
 import { fetchInsights, fetchTrends, USE_DASHBOARD_MOCK } from './data';
 
@@ -224,7 +225,12 @@ export function DashboardClient(_props?: { noRole?: boolean }) {
             </div>
             <AiBriefing data={insights} loading={loadingInsights} error={insightsError} />
           </div>
-          <WeeklyTypeChart data={trends.byWeekType} />
+          <div className="grid gap-5 lg:grid-cols-3">
+            <div className="min-w-0 lg:col-span-2">
+              <WeeklyTypeChart data={trends.byWeekType} />
+            </div>
+            <TypeShareChart data={trends.byWeekType} />
+          </div>
           <div className="grid gap-5 lg:grid-cols-2">
             <SiteBarChart data={trends.bySite} />
             <Heatmap data={trends.heatmap} />

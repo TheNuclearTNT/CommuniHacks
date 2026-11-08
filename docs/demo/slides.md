@@ -1,6 +1,6 @@
 # Slides (outline — keep to 4 slides; the demo is the pitch)
 
-1. **Title.** Langs SafeReport — quick to report, easy to follow through. Team names. "Prototype · fictional data only."
+1. **Title.** Langs Line — quick to report, easy to follow through. Team names. "Prototype · fictional data only."
 2. **The problem, in Langs' words.** "Reporting today is slow enough that some incidents never get recorded… patterns are hard to see and follow-up gets missed." Three icons: report by voice · see who has it now · spot patterns.
 3. **The route (one diagram).** Staff → Supervisor Review → Specialty acknowledgement (only if the type needs it) → Executive Assistant receipt → Filed and closed → Reopen (same record). Table of type → acknowledger from Langs' sheet.
 4. **Everything still TO CONFIRM with Langs.**

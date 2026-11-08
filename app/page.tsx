@@ -33,6 +33,11 @@ const ROLE_DESCRIPTION: Record<Role, string> = {
   EXECUTIVE: 'Explore 12-week multi-site trends, stage bottlenecks, and AI briefings',
 };
 
+// Reviewer status page, one column per stage. Goes through the (demo) portal
+// sign-in, which skips the password if you're already signed in.
+const statusHref = (column: 'needs-review' | 'in-progress' | 'with-exec' | 'closed') =>
+  `/portal-login?next=${encodeURIComponent(`/portal/status#${column}`)}`;
+
 export default function HomePage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
@@ -79,7 +84,7 @@ export default function HomePage() {
               <span className="text-accent">Track every step to closure.</span>
             </h1>
             <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
-              Langs SafeReport replaces disconnected paper and static forms with a guided 60-second voice or form intake, automated multi-role routing, statutory compliance clocks, and live pathway tracking.
+              Langs Line replaces disconnected paper and static forms with a guided 60-second voice or form intake, automated multi-role routing, statutory compliance clocks, and live pathway tracking.
             </p>
 
             {/* Primary 2-Audience Entry Cards */}
@@ -144,10 +149,13 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* 5-Stage Pathway Visual Overview */}
+          {/* Status of reports: each stage opens its column on the reviewer status page */}
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5">
             <p className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">
-              5-Stage Incident Pathway
+              Status of Reports
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Click on the below to view the status of incident reports.
             </p>
             <ol className="mt-3 space-y-2.5">
               {[
@@ -155,31 +163,31 @@ export default function HomePage() {
                   step: '1',
                   title: 'Submitted',
                   desc: 'Staff submits via voice or form; 24h supervisor SLA clock starts',
-                  href: '/report',
+                  href: statusHref('needs-review'),
                 },
                 {
                   step: '2',
                   title: 'Supervisor review',
                   desc: 'Supervisor confirms types, severity, WSIB/MOL triggers & corrective actions',
-                  href: '/supervisor',
+                  href: statusHref('needs-review'),
                 },
                 {
                   step: '3',
                   title: 'Specialty acknowledgement',
                   desc: 'Parallel sign-off by Privacy, JOHSC, IT/Facilities, Ops, or CID Group',
-                  href: '/inbox',
+                  href: statusHref('in-progress'),
                 },
                 {
                   step: '4',
                   title: 'With Executive Assistant',
                   desc: 'Unlocks automatically once all required specialty sign-offs complete',
-                  href: '/ea',
+                  href: statusHref('with-exec'),
                 },
                 {
                   step: '5',
                   title: 'Filed and closed (or Reopened)',
                   desc: 'EA files record; can be reopened on the same ID if new details emerge',
-                  href: '/dashboard',
+                  href: statusHref('closed'),
                 },
               ].map((s) => (
                 <li key={s.step}>

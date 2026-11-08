@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import type { Status } from "@/lib/types";
 import {
@@ -61,7 +61,15 @@ const BUCKETS: {
   },
 ];
 
+// The column picked on the home page ("#in-progress" etc.), to highlight it.
+const subscribeHash = (onChange: () => void) => {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+};
+const readHash = () => window.location.hash.slice(1);
+
 export default function StatusPage() {
+  const selected = useSyncExternalStore(subscribeHash, readHash, () => "");
   const [items, setItems] = useState<PortalResponseItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,7 +113,10 @@ export default function StatusPage() {
           return (
             <section
               key={b.key}
-              className={`flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs ${b.accentBorder}`}
+              id={b.key}
+              className={`flex scroll-mt-24 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs ${b.accentBorder} ${
+                selected === b.key ? "ring-2 ring-blue-400 ring-offset-2" : ""
+              }`}
             >
               <div className="mb-3 border-b border-slate-100 pb-3">
                 <div className="flex items-center justify-between gap-2">

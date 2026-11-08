@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { DashboardClient } from './DashboardClient';
 
-export const metadata: Metadata = { title: 'Trends · Langs SafeReport' };
+export const metadata: Metadata = { title: 'Trends · Langs Line' };
 
 // Executives own this screen. Supervisors are allowed too because the brief asks
 // that supervisors can "see trends" (TO CONFIRM with the team).
